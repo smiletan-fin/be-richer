@@ -1449,6 +1449,83 @@ def generate_html_report(
             body {{ background: white; color: black; }}
             .stock-card {{ break-inside: avoid; }}
         }}
+        
+        /* Expand/Collapse Section Styles */
+        .expandable-section {{
+            margin-top: 10px;
+        }}
+        
+        .expand-btn {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            padding: 15px 20px;
+            margin-top: 10px;
+            background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%);
+            border: 1px dashed var(--border);
+            border-radius: 12px;
+            color: var(--text-secondary);
+            font-weight: 600;
+            font-size: 0.95rem;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }}
+        
+        .expand-btn:hover {{
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, var(--bg-tertiary) 100%);
+            border-color: var(--blue);
+            color: var(--blue);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+        }}
+        
+        .expand-btn .expand-icon {{
+            transition: transform 0.3s ease;
+            font-size: 0.9rem;
+        }}
+        
+        .expand-btn.expanded .expand-icon {{
+            transform: rotate(180deg);
+        }}
+        
+        /* Flags expand styles */
+        .flags-container {{
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 15px;
+            align-items: center;
+        }}
+        
+        .flags-toggle {{
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+        }}
+        
+        .flags-toggle:hover {{
+            background: var(--bg-secondary);
+            border-color: var(--blue);
+            color: var(--blue);
+        }}
+        
+        .flags-hidden {{
+            display: none;
+        }}
+        
+        .flags-hidden.show {{
+            display: contents;
+        }}
     </style>
 </head>
 <body>
@@ -1578,16 +1655,40 @@ def generate_html_report(
                 </div>
             '''
         
-        # Generate flags
+        # Generate flags with expand functionality
         flags_html = ""
         if r.fund.flags:
-            flag_items = []
-            for flag in r.fund.flags[:4]:
+            # Generate unique ID for this stock's flags
+            flags_id = f"flags-{r.ticker.replace('.', '_')}"
+            
+            # Visible flags (first 3)
+            visible_items = []
+            for flag in r.fund.flags[:3]:
                 is_warning = any(w in flag for w in ["⚠", "Negative", "High", "Declining", "selling"])
                 is_positive = any(p in flag for p in ["✓", "Net cash", "Strong", "buying", "📈", "🚀"])
                 css_class = "warning" if is_warning else ("positive" if is_positive else "")
-                flag_items.append(f'<span class="flag {css_class}">{flag}</span>')
-            flags_html = f'<div class="flags">{"".join(flag_items)}</div>'
+                visible_items.append(f'<span class="flag {css_class}">{flag}</span>')
+            
+            # Hidden flags (rest)
+            hidden_items = []
+            for flag in r.fund.flags[3:]:
+                is_warning = any(w in flag for w in ["⚠", "Negative", "High", "Declining", "selling"])
+                is_positive = any(p in flag for p in ["✓", "Net cash", "Strong", "buying", "📈", "🚀"])
+                css_class = "warning" if is_warning else ("positive" if is_positive else "")
+                hidden_items.append(f'<span class="flag {css_class}">{flag}</span>')
+            
+            # Build HTML
+            if len(r.fund.flags) > 3:
+                remaining = len(r.fund.flags) - 3
+                flags_html = f'''<div class="flags-container">
+                    {"".join(visible_items)}
+                    <span class="flags-hidden" id="{flags_id}">{"".join(hidden_items)}</span>
+                    <button class="flags-toggle" onclick="toggleFlags('{flags_id}', this)">
+                        <span>▼</span> +{remaining} more
+                    </button>
+                </div>'''
+            else:
+                flags_html = f'<div class="flags">{"".join(visible_items)}</div>'
         
         # Generate institutional activity section
         institutional_html = ""
@@ -1751,8 +1852,25 @@ def generate_html_report(
                 <span class="section-count">{len(ready)} stocks</span>
             </div>
 '''
+        # Show first 5 cards
         for r in ready[:5]:
             html += _generate_stock_card(r)
+        
+        # If more than 5, add expandable section
+        if len(ready) > 5:
+            remaining_count = len(ready) - 5
+            html += f'''
+            <div class="expandable-section" id="ready-expanded" style="display: none;">
+'''
+            for r in ready[5:]:
+                html += _generate_stock_card(r)
+            html += '''
+            </div>
+            <button class="expand-btn" onclick="toggleExpandSection('ready-expanded', this)">
+                <span class="expand-icon">▼</span>
+                <span class="expand-text">Show {remaining} more stocks</span>
+            </button>
+'''.replace('{remaining}', str(remaining_count))
         html += '''
         </section>
 '''
@@ -1767,8 +1885,25 @@ def generate_html_report(
                 <span class="section-count">{len(early)} stocks</span>
             </div>
 '''
+        # Show first 5 cards
         for r in early[:5]:
             html += _generate_stock_card(r)
+        
+        # If more than 5, add expandable section
+        if len(early) > 5:
+            remaining_count = len(early) - 5
+            html += f'''
+            <div class="expandable-section" id="early-expanded" style="display: none;">
+'''
+            for r in early[5:]:
+                html += _generate_stock_card(r)
+            html += '''
+            </div>
+            <button class="expand-btn" onclick="toggleExpandSection('early-expanded', this)">
+                <span class="expand-icon">▼</span>
+                <span class="expand-text">Show {remaining} more stocks</span>
+            </button>
+'''.replace('{remaining}', str(remaining_count))
         html += '''
         </section>
 '''
@@ -1783,10 +1918,25 @@ def generate_html_report(
                 <span class="section-count">{len(watchlist)} stocks</span>
             </div>
 '''
+        # Show first 3 cards
         for r in watchlist[:3]:
             html += _generate_stock_card(r)
+        
+        # If more than 3, add expandable section
         if len(watchlist) > 3:
-            html += f'<p style="color: var(--text-muted); text-align: center; padding: 20px;">+ {len(watchlist) - 3} more in table below</p>'
+            remaining_count = len(watchlist) - 3
+            html += f'''
+            <div class="expandable-section" id="watchlist-expanded" style="display: none;">
+'''
+            for r in watchlist[3:]:
+                html += _generate_stock_card(r)
+            html += '''
+            </div>
+            <button class="expand-btn" onclick="toggleExpandSection('watchlist-expanded', this)">
+                <span class="expand-icon">▼</span>
+                <span class="expand-text">Show {remaining} more stocks</span>
+            </button>
+'''.replace('{remaining}', str(remaining_count))
         html += '''
         </section>
 '''
@@ -1942,6 +2092,47 @@ def generate_html_report(
                 rows.forEach(row => tbody.appendChild(row));
             });
         });
+        
+        // Toggle expand/collapse for card sections
+        function toggleExpandSection(sectionId, btn) {
+            const section = document.getElementById(sectionId);
+            const textSpan = btn.querySelector('.expand-text');
+            
+            if (section.style.display === 'none') {
+                section.style.display = 'block';
+                btn.classList.add('expanded');
+                textSpan.textContent = 'Show less';
+            } else {
+                section.style.display = 'none';
+                btn.classList.remove('expanded');
+                // Restore original text from data attribute or default
+                const originalCount = btn.dataset.originalCount || '';
+                textSpan.textContent = 'Show ' + originalCount + ' more stocks';
+            }
+        }
+        
+        // Initialize expand buttons with original count
+        document.querySelectorAll('.expand-btn').forEach(btn => {
+            const textSpan = btn.querySelector('.expand-text');
+            if (textSpan) {
+                const match = textSpan.textContent.match(/Show (\\d+) more/);
+                if (match) {
+                    btn.dataset.originalCount = match[1];
+                }
+            }
+        });
+        
+        // Toggle flags expand/collapse
+        function toggleFlags(flagsId, btn) {
+            const hiddenFlags = document.getElementById(flagsId);
+            if (hiddenFlags.classList.contains('show')) {
+                hiddenFlags.classList.remove('show');
+                btn.innerHTML = '<span>▼</span> Show more';
+            } else {
+                hiddenFlags.classList.add('show');
+                btn.innerHTML = '<span>▲</span> Show less';
+            }
+        }
     </script>
 </body>
 </html>

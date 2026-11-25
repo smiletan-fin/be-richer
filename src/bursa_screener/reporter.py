@@ -231,7 +231,7 @@ def print_group_panel(results: list[StockResult], classification: str) -> None:
     for r in group[:5]:   # cap at 5 per spec
         fund_breakdown = r.fund.breakdown
         tech_detail    = r.tech.detail
-        flags = r.fund.flags[:3]  # top 3 flags only
+        flags = r.fund.flags  # show all flags
         
         # Format earnings surprise info
         es_info = ""
