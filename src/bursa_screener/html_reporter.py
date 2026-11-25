@@ -409,12 +409,18 @@ def generate_html_report(
             overflow-x: auto;
             border-radius: 12px;
             border: 1px solid var(--border);
+            overflow-y: visible;
+            position: relative;
         }}
         
         table {{
             width: 100%;
             border-collapse: collapse;
             font-size: 0.9rem;
+        }}
+        
+        thead {{
+            position: relative;
         }}
         
         th {{
@@ -426,8 +432,35 @@ def generate_html_report(
             white-space: nowrap;
             cursor: pointer;
             user-select: none;
-            position: sticky;
-            top: 0;
+            position: relative;
+        }}
+        
+        /* Custom tooltip styles - positioned above to avoid clipping */
+        th[title] {{
+            cursor: help;
+        }}
+        
+        th[title]:hover::before {{
+            content: attr(title);
+            position: fixed;
+            background: #0f172a;
+            color: #f1f5f9;
+            padding: 14px 18px;
+            border-radius: 10px;
+            font-size: 0.85rem;
+            font-weight: 400;
+            white-space: pre-line;
+            min-width: 250px;
+            max-width: 320px;
+            z-index: 9999;
+            box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+            border: 1px solid var(--border);
+            line-height: 1.6;
+            text-align: left;
+            pointer-events: none;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
         }}
         
         th:hover {{
@@ -924,27 +957,30 @@ def generate_html_report(
     html += '''
         <section class="section">
             <h2 class="section-title">📋 Full Screening Results</h2>
+            <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 15px;">
+                💡 Hover over column headers for explanations
+            </p>
             <div class="table-container">
                 <table id="resultsTable">
                     <thead>
                         <tr>
-                            <th data-sort="string">Ticker</th>
-                            <th data-sort="string">Name</th>
-                            <th data-sort="number">Price</th>
-                            <th data-sort="number">Fund</th>
-                            <th data-sort="number">Tech</th>
-                            <th data-sort="number">Total</th>
-                            <th data-sort="number">PE</th>
-                            <th data-sort="number">PB</th>
-                            <th data-sort="number">ROE</th>
-                            <th data-sort="number">EPS Gr</th>
-                            <th data-sort="number">Gearing</th>
-                            <th data-sort="number">Div%</th>
-                            <th data-sort="number">RS</th>
-                            <th data-sort="number">RSI</th>
-                            <th data-sort="number">52Wk</th>
-                            <th data-sort="number">Wk Ret</th>
-                            <th data-sort="string">Class</th>
+                            <th data-sort="string" title="Stock ticker symbol on Bursa Malaysia">Ticker</th>
+                            <th data-sort="string" title="Company name">Name</th>
+                            <th data-sort="number" title="Current stock price in Malaysian Ringgit">Price</th>
+                            <th data-sort="number" title="Fundamental Score (max 65 pts)&#10;Measures business quality: earnings, growth, ROE, debt, valuation&#10;Higher = stronger company financials">Fund</th>
+                            <th data-sort="number" title="Technical Score (max 25 pts)&#10;Measures price momentum: trend, moving averages, volume&#10;Higher = stronger uptrend">Tech</th>
+                            <th data-sort="number" title="Total Score = Fundamental + Technical&#10;Higher score = better overall candidate">Total</th>
+                            <th data-sort="number" title="Price-to-Earnings Ratio (TTM)&#10;How much you pay for each RM1 of earnings&#10;Lower = cheaper (but compare within same sector)">PE</th>
+                            <th data-sort="number" title="Price-to-Book Ratio&#10;Stock price vs company's net assets&#10;Below 1.0 = trading below book value">PB</th>
+                            <th data-sort="number" title="Return on Equity (%)&#10;How efficiently the company uses shareholder money&#10;Higher = more profitable (above 15% is good)">ROE</th>
+                            <th data-sort="number" title="Earnings Per Share Growth (YoY %)&#10;How fast profits are growing&#10;Above 25% is excellent (CAN SLIM standard)">EPS Gr</th>
+                            <th data-sort="number" title="Net Gearing Ratio&#10;(Total Debt - Cash) / Equity&#10;Negative = net cash (good), Above 1.0 = high debt (risky)">Gearing</th>
+                            <th data-sort="number" title="Dividend Yield (%)&#10;Annual dividend as % of stock price&#10;Higher = more income (but growth stocks may not pay)">Div%</th>
+                            <th data-sort="number" title="Relative Strength Ratio&#10;Stock performance vs KLCI index (6 months)&#10;Above 1.0 = outperforming market">RS</th>
+                            <th data-sort="number" title="Relative Strength Index (14-day)&#10;Momentum indicator: 0-100 scale&#10;50-70 = bullish, Above 70 = overbought, Below 30 = oversold">RSI</th>
+                            <th data-sort="number" title="52-Week Position&#10;Format: +X% above low / -Y% below high&#10;Ideal: >25% above low AND within 25% of high">52Wk</th>
+                            <th data-sort="number" title="Weekly Return (%)&#10;Price change over last 5 trading days&#10;Green = up, Red = down">Wk Ret</th>
+                            <th data-sort="string" title="Classification based on scores&#10;🟢 Ready to Buy: Fund≥52 + Tech≥18&#10;🟡 Early Re-Rating: Fund≥52 + Tech 12-17&#10;🔵 Watchlist: Fund 40-51&#10;🔴 Reject: Fund<40 or red flags">Class</th>
                         </tr>
                     </thead>
                     <tbody>

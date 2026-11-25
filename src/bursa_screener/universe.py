@@ -27,7 +27,7 @@ CACHE_MAX_AGE_DAYS = 7  # refresh cache weekly
 
 
 # ── fallback list (used if fetch fails and no cache exists) ───────────────────
-# Last verified: 2026-10
+# Last verified: 2026-11
 # Note: Tickers verified against yfinance — some may differ from Bursa codes
 KLCI_FALLBACK = [
     "1155.KL",   # Malayan Banking (Maybank)
@@ -38,7 +38,7 @@ KLCI_FALLBACK = [
     "4715.KL",   # Petronas Chemicals
     "6947.KL",   # Petronas Gas
     "5681.KL",   # Petronas Dagangan
-    "1082.KL",   # Hong Leong Bank
+    "1082.KL",   # Hong Leong Financial Group
     "4065.KL",   # PPB Group
     "5183.KL",   # Public Bank
     "3816.KL",   # MISC Berhad
@@ -52,14 +52,14 @@ KLCI_FALLBACK = [
     "0166.KL",   # Telekom Malaysia
     "5008.KL",   # Westports
     "3689.KL",   # Genting Berhad
-    "5819.KL",   # Hong Leong Financial Group
+    "5819.KL",   # Hong Leong Bank
     "6742.KL",   # YTL Power International
     "4677.KL",   # YTL Corporation
     "7084.KL",   # QL Resources
     "3182.KL",   # Genting Malaysia
     "5296.KL",   # MR DIY Group
     "5225.KL",   # IHH Healthcare
-    "5052.KL",   # Inari Amertron
+    "1818.KL",   # Bursa Malaysia Berhad
 ]
 
 
@@ -318,22 +318,21 @@ def get_klci_constituents(force_refresh: bool = False) -> list[str]:
 
 
 # ── Mid-cap / thematic watchlist ─────────────────────────────────────────────
+# Last verified: 2026-11
 MID_CAP = [
-    "5076.KL",   # OSK Holdings
     "5200.KL",   # UOA Development (UOADEV)
     "7113.KL",   # Hartalega
     "7277.KL",   # Dialog Group
     "5218.KL",   # MyNews
     "0072.KL",   # Pavilion REIT
-    "5235.KL",   # Pavilion Retail REIT
-    "3336.KL",   # Bursa Malaysia Berhad
-    "5052.KL",   # Inari Amertron
+    "5212.KL",   # Pavilion Real Estate Investment Trust
+    "3336.KL",   # Scientex
     "0082.KL",   # Sunway REIT
     "5109.KL",   # Eco World Development
     "1996.KL",   # SKP Resources
     "0078.KL",   # IGB REIT
-    "5014.KL",   # Supermax
     "0138.KL",   # Axis REIT
+    "5168.KL",   # Hartalega Holdings
 ]
 
 # ── Southeast Asia cross-listings / regional ─────────────────────────────────

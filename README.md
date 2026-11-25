@@ -1,50 +1,56 @@
 # Be Richer - Bursa Malaysia Stock Screener
 
-Automated stock screener for Bursa Malaysia (and Southeast Asia) equities.
+Automated stock screener for Bursa Malaysia (and Southeast Asia) equities using industry-standard scoring methodologies.
 
 ---
 
 ## What It Does
 
 **Level 1** is the automated screening layer. It fetches price history and fundamental data via
-`yfinance`, scores every stock against a two-part framework, and classifies each into one of four groups:
+`yfinance`, scores every stock against an industry-aligned 90-point framework, and classifies each into one of four groups:
 
-| Group | Meaning |
-|---|---|
-| 🟢 READY TO BUY | Fundamental ≥ 50/60 AND Technical ≥ 14/20 |
-| 🟡 EARLY RE-RATING | Fundamental ≥ 50/60 AND Technical 9–13/20 |
-| 🔵 WATCHLIST | Fundamental 40–49/60 |
-| 🔴 REJECT | Fundamental < 40/60 or hard-reject flag triggered |
+| Group | Criteria | Meaning |
+|-------|----------|---------|
+| 🟢 READY TO BUY | Fund ≥ 52/65 AND Tech ≥ 18/25 | Strong fundamentals + confirmed uptrend |
+| 🟡 EARLY RE-RATING | Fund ≥ 52/65 AND Tech 12-17/25 | Strong fundamentals, momentum building |
+| 🔵 WATCHLIST | Fund 40-51/65 | Decent fundamentals, monitor for upgrades |
+| 🔴 REJECT | Fund < 40/65 or red flags | Weak fundamentals or warning signs |
 
-Results are printed as a rich terminal table and exported to `results/bursa_screen_<timestamp>.csv`.
+Results are printed as a rich terminal table and exported to both CSV and HTML reports.
 
 ---
 
 ## Scoring Framework
 
-### Fundamental Score — 60 pts
+The scoring system is aligned with proven methodologies: **CAN SLIM**, **Piotroski F-Score**, and **Minervini SEPA**.
 
-| Factor | Max |
-|---|---|
-| A. Earnings Quality | 15 |
-| B. ROE / ROIC | 10 |
-| C. Financial Health (gearing) | 10 |
-| D. Valuation Margin of Safety (PE + PB vs sector) | 15 |
-| E. Operating Cash Flow yield | 5 |
-| F. Dividends / Capital Returns | 5 |
+### Fundamental Score — 65 pts
 
-### Technical Score — 20 pts
+| Factor | Max | Description |
+|--------|-----|-------------|
+| Earnings Quality | 10 | PE reasonableness + OCF conversion |
+| **Earnings Growth** | 10 | YoY EPS growth (CAN SLIM: >25% is excellent) |
+| ROE / ROIC | 10 | Return on equity tiers |
+| Financial Health | 10 | Gearing/debt levels |
+| Valuation | 12 | PE vs sector benchmark + P/B |
+| Operating Cash Flow | 5 | OCF yield |
+| Dividends | 3 | Reduced weight (growth stocks don't pay) |
+| **Improving Fundamentals** | 5 | Piotroski-style momentum checks |
 
-| Factor | Max |
-|---|---|
-| 20-day Moving Average | 3 |
-| 50-day Moving Average | 3 |
-| 200-day Moving Average | 3 |
-| RSI (14-period) | 2 |
-| MACD | 2 |
-| Volume vs 30D ADV | 3 |
-| Breakout / Base Formation | 2 |
-| Support / Resistance | 2 |
+### Technical Score — 25 pts
+
+| Factor | Max | Description |
+|--------|-----|-------------|
+| 20-day Moving Average | 3 | Price vs MA20 + trend |
+| 50-day Moving Average | 3 | Price vs MA50 + stacking |
+| 200-day Moving Average | 3 | Long-term trend |
+| RSI (14-period) | 2 | Momentum indicator |
+| MACD | 2 | Trend direction |
+| Volume | 3 | Volume patterns on price moves |
+| Breakout / Base | 2 | Near highs detection |
+| Support / Resistance | 2 | Support level holding |
+| **Relative Strength** | 3 | Stock vs KLCI index performance |
+| **52-Week Position** | 2 | Minervini template alignment |
 
 ---
 
@@ -75,9 +81,12 @@ be-richer
 be-richer --tier broad
 be-richer --tickers 1155.KL 5347.KL 4715.KL
 
+# Generate HTML report (recommended)
+be-richer --tier klci --html
+
 # Or using Python module
 python -m bursa_screener
-python -m bursa_screener --tier broad
+python -m bursa_screener --tier klci --html
 ```
 
 ### Shell Script Shortcuts
@@ -96,6 +105,20 @@ chmod +x run.sh
 
 ---
 
+## GitHub Actions (Automated Runs)
+
+Run the screener directly from GitHub without setting up locally:
+
+1. Go to **Actions** tab in your repository
+2. Select **"KLCI Stock Screener"** workflow
+3. Click **"Run workflow"**
+4. Choose tier (klci/broad/full) and options
+5. Download HTML report from **Artifacts** when complete
+
+The workflow uses dependency caching to minimize run time (~30 seconds for KLCI tier).
+
+---
+
 ## Command Line Options
 
 ```bash
@@ -108,6 +131,7 @@ be-richer --tier full    # All tiers including SEA regional
 be-richer --tickers 1155.KL 5347.KL 1023.KL
 
 # Output options
+be-richer --html             # Generate interactive HTML report
 be-richer --show-rejected    # Include REJECT stocks in output
 be-richer --no-export        # Skip CSV export
 
@@ -121,10 +145,23 @@ be-richer --refresh-universe # Force refresh KLCI constituents
 
 ---
 
+## HTML Report Features
+
+The `--html` flag generates a beautiful, self-contained HTML report with:
+
+- 📊 **Summary cards** showing classification counts
+- 📋 **Interactive sortable table** with all metrics
+- 📚 **Strategy explainer** — collapsible section explaining the scoring methodology
+- 🌙 **Dark theme** — easy on the eyes
+- 📱 **Mobile responsive** — works on any device
+- 🔍 **New metrics displayed**: EPS Growth, RS Ratio, 52-Week Position
+
+---
+
 ## Data Source & Limitations
 
 | Item | Detail |
-|---|---|
+|------|--------|
 | Price data | `yfinance` — 15-min delayed |
 | Fundamentals | Yahoo Finance scraped data — may lag filings by a few days |
 | Forward PE / analyst estimates | Sparse for small-cap Bursa names |
@@ -147,22 +184,41 @@ Yahoo Finance aggressively rate-limits free API access. The screener includes ca
 be-richer/
 ├── src/
 │   └── bursa_screener/
-│       ├── __init__.py      # Package entry point
-│       ├── __main__.py      # Allow python -m bursa_screener
-│       ├── screener.py      # CLI entry point
-│       ├── universe.py      # Stock universe (KLCI, mid-cap, SEA)
-│       ├── data_fetcher.py  # yfinance wrapper + caching
-│       ├── technicals.py    # 20-point technical scorer
-│       ├── fundamentals.py  # 60-point fundamental scorer
-│       ├── ranker.py        # Classification + sorting
-│       ├── reporter.py      # Rich terminal output + CSV
-│       └── config/          # Sector PE benchmarks
-├── results/                 # CSV exports (auto-created)
-├── pyproject.toml           # Project configuration
-├── requirements.txt         # Dependencies
-├── run.sh                   # Shell shortcuts
-└── README.md               # This file
+│       ├── __init__.py       # Package entry point
+│       ├── __main__.py       # Allow python -m bursa_screener
+│       ├── screener.py       # CLI entry point
+│       ├── universe.py       # Stock universe (KLCI, mid-cap, SEA)
+│       ├── data_fetcher.py   # yfinance wrapper + caching
+│       ├── technicals.py     # 25-point technical scorer
+│       ├── fundamentals.py   # 65-point fundamental scorer
+│       ├── ranker.py         # Classification + sorting
+│       ├── reporter.py       # Rich terminal output + CSV
+│       ├── html_reporter.py  # HTML report generator
+│       └── config/           # Sector PE benchmarks
+├── .github/
+│   └── workflows/
+│       └── klci-scan.yml     # GitHub Actions workflow
+├── results/                  # CSV/HTML exports (auto-created)
+├── pyproject.toml            # Project configuration
+├── requirements.txt          # Dependencies
+├── run.sh                    # Shell shortcuts
+└── README.md                 # This file
 ```
+
+---
+
+## Output Files
+
+Every run saves timestamped files to `results/`:
+
+```
+results/bursa_screen_20261125_0930.csv
+results/bursa_screen_20261125_0930.html
+```
+
+**CSV columns**: `ticker, name, price, fundamental, technical, catalyst, total,
+pe_ttm, pb, roe, net_gearing, div_yield, earnings_growth, rs_ratio, adv_30d, 
+week_return, month_return, rsi, vol_ratio, 52wk_position, tech_status, classification`
 
 ---
 
@@ -183,25 +239,12 @@ MID_CAP = [
 
 ---
 
-## CSV Export
-
-Every run saves a timestamped CSV to `results/`:
-
-```
-results/bursa_screen_20261125_0930.csv
-```
-
-Columns: `ticker, name, price, fundamental, technical, catalyst, total,
-pe_ttm, pb, roe, net_gearing, div_yield, adv_30d, week_return, month_return,
-rsi, vol_ratio, tech_status, classification`
-
----
-
 ## Roadmap
 
 | Level | Status | Description |
-|---|---|---|
-| Level 1 | ✅ Done | Automated screener — technicals + fundamentals |
+|-------|--------|-------------|
+| Level 1 | ✅ Done | Automated screener — technicals + fundamentals (90-point system) |
+| Level 1.5 | ✅ Done | HTML reports, GitHub Actions, industry-aligned scoring |
 | Level 2 | 🔜 Planned | LLM deep analysis — catalyst scoring, Core EPS normalization |
 | Level 3 | 🔜 Planned | Weekly scheduler, Telegram/email alerts, portfolio tracker |
 
