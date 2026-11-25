@@ -1,6 +1,6 @@
 """
 Reporter — renders the screening results to the terminal (rich tables)
-and exports to CSV.
+and exports to CSV and HTML.
 
 Output sections:
     1. Run summary (ticker count, timestamp, data source warnings)
@@ -24,6 +24,7 @@ from rich.table import Table
 from rich import box
 
 from .ranker import StockResult
+from .html_reporter import generate_html_report
 
 console = Console()
 
@@ -224,8 +225,14 @@ def print_all(
     elapsed: float,
     show_rejected: bool = False,
     export: bool = True,
-) -> None:
-    """Master print function — call this from main."""
+    export_html: bool = False,
+    tier: str = "klci",
+) -> dict[str, str | None]:
+    """
+    Master print function — call this from main.
+    
+    Returns dict with export paths: {"csv": path, "html": path}
+    """
     print_summary(results, universe_size, elapsed)
     print_screening_table(results, show_rejected=show_rejected)
     print_group_panel(results, "READY TO BUY")
@@ -233,6 +240,24 @@ def print_all(
     print_group_panel(results, "WATCHLIST")
     print_flags_warnings(results)
 
+    exports: dict[str, str | None] = {"csv": None, "html": None}
+
     if export:
         csv_path = export_csv(results)
-        console.print(f"\n[dim]📁 Results exported: {csv_path}[/dim]\n")
+        exports["csv"] = csv_path
+        console.print(f"\n[dim]📁 CSV exported: {csv_path}[/dim]")
+    
+    if export_html:
+        html_path = generate_html_report(
+            results=results,
+            universe_size=universe_size,
+            elapsed=elapsed,
+            tier=tier,
+            show_rejected=show_rejected,
+        )
+        exports["html"] = html_path
+        console.print(f"[dim]📁 HTML exported: {html_path}[/dim]\n")
+    elif export:
+        console.print()
+    
+    return exports

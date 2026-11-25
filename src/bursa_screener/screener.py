@@ -39,10 +39,16 @@ def run(
     tickers: list[str] | None = None,
     show_rejected: bool = False,
     export: bool = True,
+    export_html: bool = False,
     refresh_universe: bool = False,
     use_cache: bool = True,
     skip_connectivity_check: bool = False,
-) -> None:
+) -> dict[str, str | None]:
+    """
+    Run the screener and return export paths.
+    
+    Returns dict with paths: {"csv": path, "html": path}
+    """
     universe = tickers if tickers else get_universe(tier, force_refresh=refresh_universe)
 
     cache_status = "[green]cache enabled[/green]" if use_cache else "[yellow]cache disabled[/yellow]"
@@ -100,7 +106,15 @@ def run(
     elapsed = time.time() - start
 
     # ── Step 4: report ────────────────────────────────────────────────────────
-    print_all(results, len(universe), elapsed, show_rejected=show_rejected, export=export)
+    return print_all(
+        results, 
+        len(universe), 
+        elapsed, 
+        show_rejected=show_rejected, 
+        export=export,
+        export_html=export_html,
+        tier=tier if not tickers else "custom",
+    )
 
 
 def main() -> None:
@@ -143,6 +157,12 @@ Examples:
         action="store_true",
         default=False,
         help="Skip CSV export",
+    )
+    parser.add_argument(
+        "--html",
+        action="store_true",
+        default=False,
+        help="Generate HTML report (in addition to CSV)",
     )
     parser.add_argument(
         "--refresh-universe",
@@ -213,6 +233,7 @@ Examples:
         tickers=args.tickers,
         show_rejected=args.show_rejected,
         export=not args.no_export,
+        export_html=args.html,
         refresh_universe=args.refresh_universe,
         use_cache=not args.no_cache,
     )

@@ -1,0 +1,81 @@
+name: KLCI Stock Screener
+
+on:
+  workflow_dispatch:
+    inputs:
+      tier:
+        description: 'Stock universe tier'
+        required: false
+        default: 'klci'
+        type: choice
+        options:
+          - klci
+          - broad
+          - full
+      show_rejected:
+        description: 'Include rejected stocks in report'
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  scan:
+    name: Run Bursa Malaysia Screener
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Run KLCI Screener
+        run: |
+          mkdir -p results
+          if [ "${{ inputs.show_rejected }}" = "true" ]; then
+            python -m bursa_screener --tier ${{ inputs.tier }} --show-rejected --html
+          else
+            python -m bursa_screener --tier ${{ inputs.tier }} --html
+          fi
+
+      - name: Upload HTML Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: bursa-screen-report-${{ github.run_number }}
+          path: |
+            results/*.html
+            results/*.csv
+          retention-days: 30
+          if-no-files-found: warn
+
+      - name: Display results summary
+        run: |
+          echo "## 📊 Screening Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tier:** ${{ inputs.tier }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Show Rejected:** ${{ inputs.show_rejected }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Run:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📁 Reports Generated" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          for f in results/*; do
+            if [ -f "$f" ]; then
+              fname=$(basename "$f")
+              size=$(ls -lh "$f" | awk '{print $5}')
+              echo "- \`$fname\` ($size)" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📥 Download" >> $GITHUB_STEP_SUMMARY
+          echo "Download the **HTML report** from the Artifacts section below." >> $GITHUB_STEP_SUMMARY
+          echo "Open the HTML file in any browser for an interactive, sortable report." >> $GITHUB_STEP_SUMMARY
