@@ -85,6 +85,206 @@ def generate_html_report(
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Bursa Malaysia Screener Report - {ts.strftime("%Y-%m-%d %H:%M")}</title>
     <style>
+        /* Strategy section styles */
+        .strategy-section {{
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, #1a2744 100%);
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 30px;
+            border: 1px solid var(--border);
+        }}
+        
+        .strategy-title {{
+            font-size: 1.4rem;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }}
+        
+        .strategy-intro {{
+            color: var(--text-secondary);
+            margin-bottom: 25px;
+            line-height: 1.8;
+            font-size: 1rem;
+        }}
+        
+        .scoring-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 25px;
+        }}
+        
+        .score-box {{
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            padding: 20px;
+            border-left: 4px solid var(--blue);
+        }}
+        
+        .score-box.fundamental {{
+            border-left-color: #8b5cf6;
+        }}
+        
+        .score-box.technical {{
+            border-left-color: #06b6d4;
+        }}
+        
+        .score-box-title {{
+            font-size: 1.1rem;
+            font-weight: 600;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+        
+        .score-box-subtitle {{
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            margin-bottom: 15px;
+        }}
+        
+        .factor-list {{
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }}
+        
+        .factor-list li {{
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9rem;
+        }}
+        
+        .factor-list li:last-child {{
+            border-bottom: none;
+        }}
+        
+        .factor-name {{
+            color: var(--text-secondary);
+        }}
+        
+        .factor-points {{
+            color: var(--text-muted);
+            font-size: 0.8rem;
+        }}
+        
+        .category-explainer {{
+            margin-top: 25px;
+        }}
+        
+        .category-explainer-title {{
+            font-size: 1.1rem;
+            margin-bottom: 15px;
+        }}
+        
+        .category-cards {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 15px;
+        }}
+        
+        .category-card {{
+            background: var(--bg-tertiary);
+            border-radius: 10px;
+            padding: 15px;
+            border-left: 4px solid;
+        }}
+        
+        .category-card.ready {{
+            border-left-color: var(--green);
+        }}
+        
+        .category-card.early {{
+            border-left-color: var(--yellow);
+        }}
+        
+        .category-card.watchlist {{
+            border-left-color: var(--blue);
+        }}
+        
+        .category-card.reject {{
+            border-left-color: var(--red);
+        }}
+        
+        .category-card-header {{
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+            font-weight: 600;
+        }}
+        
+        .category-card-criteria {{
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+            padding: 6px 10px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 6px;
+            font-family: monospace;
+        }}
+        
+        .category-card-desc {{
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            line-height: 1.6;
+        }}
+        
+        .analogy-box {{
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.3);
+            border-radius: 10px;
+            padding: 15px;
+            margin-top: 20px;
+        }}
+        
+        .analogy-title {{
+            font-size: 0.95rem;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: var(--blue);
+        }}
+        
+        .analogy-text {{
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            line-height: 1.7;
+        }}
+        
+        .toggle-btn {{
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border);
+            color: var(--text-primary);
+            padding: 10px 20px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 15px;
+            transition: background 0.2s;
+        }}
+        
+        .toggle-btn:hover {{
+            background: var(--bg-secondary);
+        }}
+        
+        .collapsible {{
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease-out;
+        }}
+        
+        .collapsible.expanded {{
+            max-height: 2000px;
+        }}
         :root {{
             --bg-primary: #0f172a;
             --bg-secondary: #1e293b;
@@ -426,6 +626,198 @@ def generate_html_report(
                 <div class="card-label">Reject</div>
             </div>
         </section>
+        
+        <!-- Strategy Explanation Section -->
+        <section class="strategy-section">
+            <h2 class="strategy-title">📚 How This Screener Works</h2>
+            
+            <p class="strategy-intro">
+                This screener analyzes stocks using an <strong>industry-standard 90-point scoring system</strong> that combines 
+                financial quality (fundamentals) with price momentum (technicals). Think of it like checking 
+                both the engine AND the speedometer before buying a car — you want a quality vehicle that's 
+                also moving in the right direction. This methodology is aligned with proven frameworks like 
+                CAN SLIM, Piotroski F-Score, and Minervini's SEPA.
+            </p>
+            
+            <button class="toggle-btn" onclick="toggleStrategy()">
+                <span id="toggle-icon">▶</span> Show Detailed Scoring Breakdown
+            </button>
+            
+            <div id="strategy-details" class="collapsible">
+                <div class="scoring-grid">
+                    <div class="score-box fundamental">
+                        <div class="score-box-title">
+                            <span>💰</span> Fundamental Score (65 points)
+                        </div>
+                        <div class="score-box-subtitle">
+                            "Is this a quality business?" — Measures company health, growth & value
+                        </div>
+                        <ul class="factor-list">
+                            <li>
+                                <span class="factor-name">📈 Earnings Quality</span>
+                                <span class="factor-points">10 pts</span>
+                            </li>
+                            <li>
+                                <span class="factor-name">🚀 Earnings Growth (NEW)</span>
+                                <span class="factor-points">10 pts</span>
+                            </li>
+                            <li>
+                                <span class="factor-name">💵 Return on Equity (ROE)</span>
+                                <span class="factor-points">10 pts</span>
+                            </li>
+                            <li>
+                                <span class="factor-name">🏦 Financial Health (Debt levels)</span>
+                                <span class="factor-points">10 pts</span>
+                            </li>
+                            <li>
+                                <span class="factor-name">🏷️ Valuation (PE & PB vs sector)</span>
+                                <span class="factor-points">12 pts</span>
+                            </li>
+                            <li>
+                                <span class="factor-name">💸 Cash Flow</span>
+                                <span class="factor-points">5 pts</span>
+                            </li>
+                            <li>
+                                <span class="factor-name">🎁 Dividends</span>
+                                <span class="factor-points">3 pts</span>
+                            </li>
+                            <li>
+                                <span class="factor-name">📊 Improving Fundamentals (NEW)</span>
+                                <span class="factor-points">5 pts</span>
+                            </li>
+                        </ul>
+                    </div>
+                    
+                    <div class="score-box technical">
+                        <div class="score-box-title">
+                            <span>📊</span> Technical Score (25 points)
+                        </div>
+                        <div class="score-box-subtitle">
+                            "Is the price going up?" — Measures momentum, trend & relative strength
+                        </div>
+                        <ul class="factor-list">
+                            <li>
+                                <span class="factor-name">📉 Price vs 20-day average</span>
+                                <span class="factor-points">3 pts</span>
+                            </li>
+                            <li>
+                                <span class="factor-name">📉 Price vs 50-day average</span>
+                                <span class="factor-points">3 pts</span>
+                            </li>
+                            <li>
+                                <span class="factor-name">📉 Price vs 200-day average</span>
+                                <span class="factor-points">3 pts</span>
+                            </li>
+                            <li>
+                                <span class="factor-name">🎯 RSI (Momentum indicator)</span>
+                                <span class="factor-points">2 pts</span>
+                            </li>
+                            <li>
+                                <span class="factor-name">📶 MACD (Trend direction)</span>
+                                <span class="factor-points">2 pts</span>
+                            </li>
+                            <li>
+                                <span class="factor-name">📊 Trading Volume</span>
+                                <span class="factor-points">3 pts</span>
+                            </li>
+                            <li>
+                                <span class="factor-name">🚀 Breakout Pattern</span>
+                                <span class="factor-points">2 pts</span>
+                            </li>
+                            <li>
+                                <span class="factor-name">🛡️ Support Level</span>
+                                <span class="factor-points">2 pts</span>
+                            </li>
+                            <li>
+                                <span class="factor-name">💪 Relative Strength (NEW)</span>
+                                <span class="factor-points">3 pts</span>
+                            </li>
+                            <li>
+                                <span class="factor-name">📍 52-Week Position (NEW)</span>
+                                <span class="factor-points">2 pts</span>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+                
+                <div class="category-explainer">
+                    <h3 class="category-explainer-title">🏷️ What Each Category Means</h3>
+                    
+                    <div class="category-cards">
+                        <div class="category-card ready">
+                            <div class="category-card-header">
+                                🟢 Ready to Buy
+                            </div>
+                            <div class="category-card-criteria">
+                                Fundamental ≥ 52/65 AND Technical ≥ 18/25
+                            </div>
+                            <div class="category-card-desc">
+                                <strong>The sweet spot!</strong> These stocks are both financially strong 
+                                AND showing positive price momentum. The business is healthy, growing, and the 
+                                market is already recognizing its value. Consider these for immediate 
+                                research and potential entry.
+                            </div>
+                        </div>
+                        
+                        <div class="category-card early">
+                            <div class="category-card-header">
+                                🟡 Early Re-Rating
+                            </div>
+                            <div class="category-card-criteria">
+                                Fundamental ≥ 52/65 AND Technical 12-17/25
+                            </div>
+                            <div class="category-card-desc">
+                                <strong>Hidden gems in transition!</strong> Great fundamentals but price 
+                                hasn't fully caught up yet. These could be early-stage turnarounds. 
+                                Watch for increasing volume, relative strength improvement, and price breakouts.
+                            </div>
+                        </div>
+                        
+                        <div class="category-card watchlist">
+                            <div class="category-card-header">
+                                🔵 Watchlist
+                            </div>
+                            <div class="category-card-criteria">
+                                Fundamental 40-51/65
+                            </div>
+                            <div class="category-card-desc">
+                                <strong>Keep an eye on these.</strong> Decent fundamentals but not 
+                                outstanding. Could improve with better earnings growth or if valuation 
+                                becomes more attractive. Monitor for upgrades.
+                            </div>
+                        </div>
+                        
+                        <div class="category-card reject">
+                            <div class="category-card-header">
+                                🔴 Reject
+                            </div>
+                            <div class="category-card-criteria">
+                                Fundamental &lt; 40/65 OR red flags present
+                            </div>
+                            <div class="category-card-desc">
+                                <strong>Avoid for now.</strong> Weak fundamentals, negative earnings growth, 
+                                high debt, or other warning signs. Even if the price looks cheap, 
+                                there's usually a reason. These often become "value traps."
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="analogy-box">
+                    <div class="analogy-title">💡 Simple Analogy: Buying a Used Car</div>
+                    <div class="analogy-text">
+                        <strong>Fundamental Score</strong> = Checking the engine, brakes, and service history. 
+                        Is this a reliable car?<br><br>
+                        <strong>Technical Score</strong> = Checking if the car is accelerating or slowing down. 
+                        Is it gaining momentum?<br><br>
+                        <strong>🟢 Ready to Buy</strong> = Great engine + accelerating = Buy with confidence<br>
+                        <strong>🟡 Early Re-Rating</strong> = Great engine + just started moving = Promising, watch closely<br>
+                        <strong>🔵 Watchlist</strong> = Okay engine = Wait for better conditions<br>
+                        <strong>🔴 Reject</strong> = Engine problems = Don't buy, no matter how cheap
+                    </div>
+                </div>
+            </div>
+        </section>
 '''
     
     # Ready to Buy highlight section
@@ -442,8 +834,8 @@ def generate_html_report(
                     <span class="badge badge-ready">READY TO BUY</span>
                 </div>
                 <div class="stock-scores">
-                    <span>Fund: <strong>{r.fundamental_score}/60</strong></span>
-                    <span>Tech: <strong>{r.technical_score}/20</strong></span>
+                    <span>Fund: <strong>{r.fundamental_score}/65</strong></span>
+                    <span>Tech: <strong>{r.technical_score}/25</strong></span>
                     <span>Total: <strong>{r.total_score}</strong></span>
                 </div>
                 <div class="stock-metrics">
@@ -460,16 +852,16 @@ def generate_html_report(
                         <div class="metric-value">{_format_value(r.fund.roe_pct, "%", 1)}</div>
                     </div>
                     <div class="metric">
-                        <div class="metric-label">Div Yield</div>
-                        <div class="metric-value">{_format_value(r.fund.div_yield_pct, "%", 1)}</div>
+                        <div class="metric-label">EPS Growth</div>
+                        <div class="metric-value">{_format_return(r.fund.earnings_growth_pct)}</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">RS Ratio</div>
+                        <div class="metric-value">{r.tech.rs_ratio:.2f}x</div>
                     </div>
                     <div class="metric">
                         <div class="metric-label">Week Return</div>
                         <div class="metric-value">{_format_return(r.tech.week_return)}</div>
-                    </div>
-                    <div class="metric">
-                        <div class="metric-label">RSI</div>
-                        <div class="metric-value">{r.tech.rsi_val:.0f}</div>
                     </div>
                 </div>
             </div>
@@ -492,8 +884,8 @@ def generate_html_report(
                     <span class="badge badge-early">EARLY RE-RATING</span>
                 </div>
                 <div class="stock-scores">
-                    <span>Fund: <strong>{r.fundamental_score}/60</strong></span>
-                    <span>Tech: <strong>{r.technical_score}/20</strong></span>
+                    <span>Fund: <strong>{r.fundamental_score}/65</strong></span>
+                    <span>Tech: <strong>{r.technical_score}/25</strong></span>
                     <span>Total: <strong>{r.total_score}</strong></span>
                 </div>
                 <div class="stock-metrics">
@@ -506,8 +898,16 @@ def generate_html_report(
                         <div class="metric-value">{_format_value(r.fund.pe_ttm, "x", 1)}</div>
                     </div>
                     <div class="metric">
-                        <div class="metric-label">Tech Status</div>
-                        <div class="metric-value">{r.tech.status}</div>
+                        <div class="metric-label">EPS Growth</div>
+                        <div class="metric-value">{_format_return(r.fund.earnings_growth_pct)}</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">RS Ratio</div>
+                        <div class="metric-value">{r.tech.rs_ratio:.2f}x</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">52Wk Position</div>
+                        <div class="metric-value">+{r.tech.pct_from_52wk_low:.0f}% / -{r.tech.pct_from_52wk_high:.0f}%</div>
                     </div>
                     <div class="metric">
                         <div class="metric-label">Vol Ratio</div>
@@ -537,9 +937,12 @@ def generate_html_report(
                             <th data-sort="number">PE</th>
                             <th data-sort="number">PB</th>
                             <th data-sort="number">ROE</th>
+                            <th data-sort="number">EPS Gr</th>
                             <th data-sort="number">Gearing</th>
                             <th data-sort="number">Div%</th>
+                            <th data-sort="number">RS</th>
                             <th data-sort="number">RSI</th>
+                            <th data-sort="number">52Wk</th>
                             <th data-sort="number">Wk Ret</th>
                             <th data-sort="string">Class</th>
                         </tr>
@@ -556,6 +959,9 @@ def generate_html_report(
             "REJECT": "badge-reject",
         }.get(r.classification, "")
         
+        # Format 52-week position
+        wk52_str = f"+{r.tech.pct_from_52wk_low:.0f}%/-{r.tech.pct_from_52wk_high:.0f}%"
+        
         html += f'''
                         <tr>
                             <td class="ticker">{r.ticker}</td>
@@ -567,9 +973,12 @@ def generate_html_report(
                             <td>{_format_value(r.fund.pe_ttm, "", 1)}</td>
                             <td>{_format_value(r.fund.pb, "", 2)}</td>
                             <td>{_format_value(r.fund.roe_pct, "", 1)}</td>
+                            <td>{_format_return(r.fund.earnings_growth_pct)}</td>
                             <td>{_format_value(r.fund.net_gearing, "", 2)}</td>
                             <td>{_format_value(r.fund.div_yield_pct, "", 1)}</td>
+                            <td>{r.tech.rs_ratio:.2f}x</td>
                             <td>{r.tech.rsi_val:.0f}</td>
+                            <td>{wk52_str}</td>
                             <td>{_format_return(r.tech.week_return)}</td>
                             <td><span class="badge {badge_class}">{_get_class_emoji(r.classification)} {r.classification}</span></td>
                         </tr>
@@ -588,6 +997,23 @@ def generate_html_report(
     </div>
     
     <script>
+        // Toggle strategy section
+        function toggleStrategy() {
+            const details = document.getElementById('strategy-details');
+            const icon = document.getElementById('toggle-icon');
+            const btn = document.querySelector('.toggle-btn');
+            
+            if (details.classList.contains('expanded')) {
+                details.classList.remove('expanded');
+                icon.textContent = '▶';
+                btn.innerHTML = '<span id="toggle-icon">▶</span> Show Detailed Scoring Breakdown';
+            } else {
+                details.classList.add('expanded');
+                icon.textContent = '▼';
+                btn.innerHTML = '<span id="toggle-icon">▼</span> Hide Detailed Scoring Breakdown';
+            }
+        }
+        
         // Simple table sorting
         document.querySelectorAll('th[data-sort]').forEach(th => {
             th.addEventListener('click', () => {

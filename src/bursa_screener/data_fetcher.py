@@ -355,6 +355,20 @@ def fetch_fundamentals(ticker: str, use_cache: bool = True) -> dict[str, Any]:
         "total_cash":           total_cash,
         "shares_outstanding":   shares_out,
         "book_value_per_share": book_value,
+        # NEW: Growth metrics for enhanced scoring
+        "earningsGrowth":       _get("earningsGrowth"),           # YoY earnings growth (decimal)
+        "revenueGrowth":        _get("revenueGrowth"),            # YoY revenue growth (decimal)
+        "earningsQuarterlyGrowth": _get("earningsQuarterlyGrowth"),  # QoQ earnings growth
+        # NEW: Additional quality metrics
+        "grossMargins":         _get("grossMargins"),
+        "operatingMargins":     _get("operatingMargins"),
+        "profitMargins":        _get("profitMargins"),
+        "returnOnAssets":       _get("returnOnAssets"),           # ROA for Piotroski
+        "currentRatio":         _get("currentRatio"),             # Liquidity
+        "quickRatio":           _get("quickRatio"),
+        # 52-week data for relative strength
+        "fiftyTwoWeekHigh":     _get("fiftyTwoWeekHigh"),
+        "fiftyTwoWeekLow":      _get("fiftyTwoWeekLow"),
     }
 
     # Cache successful fetch (only if we got actual data)

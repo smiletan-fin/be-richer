@@ -1,12 +1,14 @@
 """
-Ranker — combines technical + fundamental scores, applies your
+Ranker — combines technical + fundamental scores, applies
 classification rules, and returns a sorted candidate list.
 
-Classification thresholds (from your spec):
-    READY TO BUY     : fundamental ≥ 50, technical ≥ 14
-    EARLY RE-RATING  : fundamental ≥ 50, technical 9–13
-    WATCHLIST        : fundamental 40–49
-    REJECT           : fundamental < 40 or hard reject flags
+Enhanced 90-point system (65 Fundamental + 25 Technical):
+
+Classification thresholds (industry-aligned):
+    READY TO BUY     : fundamental ≥ 52/65, technical ≥ 18/25
+    EARLY RE-RATING  : fundamental ≥ 52/65, technical 12–17/25
+    WATCHLIST        : fundamental 40–51/65
+    REJECT           : fundamental < 40/65 or hard reject flags
 
 Note: catalyst score (20 pts) is NOT computed in Level 1 — it requires
 LLM analysis in Level 2.  We placeholder it as None so the output
@@ -21,10 +23,17 @@ from .fundamentals import FundamentalScore
 from .technicals import TechnicalScore
 
 
+# ── Classification thresholds (updated for 90-point system) ───────────────────
+FUND_THRESHOLD_READY = 52      # ~80% of 65 points
+FUND_THRESHOLD_WATCHLIST = 40  # ~62% of 65 points
+TECH_THRESHOLD_UPTREND = 18    # ~72% of 25 points
+TECH_THRESHOLD_EARLY = 12      # ~48% of 25 points
+
 # ── hard reject flags ─────────────────────────────────────────────────────────
 HARD_REJECT_KEYWORDS = [
     "PN17", "GN3", "Negative PE", "Negative ROE",
     "High net gearing", "Negative operating cash flow",
+    "Negative earnings growth",
 ]
 
 
@@ -70,14 +79,14 @@ class StockResult:
         if self.hard_reject and fs < 35:
             return "REJECT"
 
-        if fs >= 50:
-            if ts >= 14:
+        if fs >= FUND_THRESHOLD_READY:  # 52/65
+            if ts >= TECH_THRESHOLD_UPTREND:  # 18/25
                 return "READY TO BUY"
-            elif ts >= 9:
+            elif ts >= TECH_THRESHOLD_EARLY:  # 12/25
                 return "EARLY RE-RATING"
             else:
                 return "WATCHLIST"
-        elif fs >= 40:
+        elif fs >= FUND_THRESHOLD_WATCHLIST:  # 40/65
             return "WATCHLIST"
         else:
             return "REJECT"
@@ -97,8 +106,8 @@ class StockResult:
             "ticker":          self.ticker,
             "name":            (self.long_name or "")[:28],
             "price":           f"RM {self.tech.price:.3f}" if self.tech.price else "N/A",
-            "fundamental":     f"{self.fundamental_score}/60",
-            "technical":       f"{self.technical_score}/20",
+            "fundamental":     f"{self.fundamental_score}/65",
+            "technical":       f"{self.technical_score}/25",
             "catalyst":        f"{self.catalyst_score}/20" if self.catalyst_score is not None else "—",
             "total":           f"{self.total_score}",
             "pe_ttm":          f"{self.fund.pe_ttm:.1f}x"   if self.fund.pe_ttm   else "N/A",
@@ -106,11 +115,14 @@ class StockResult:
             "roe":             f"{self.fund.roe_pct:.1f}%"   if self.fund.roe_pct  else "N/A",
             "net_gearing":     f"{self.fund.net_gearing:.2f}" if self.fund.net_gearing is not None else "N/A",
             "div_yield":       f"{self.fund.div_yield_pct:.1f}%" if self.fund.div_yield_pct else "N/A",
+            "earnings_growth": f"{self.fund.earnings_growth_pct:+.1f}%" if self.fund.earnings_growth_pct else "N/A",
+            "rs_ratio":        f"{self.tech.rs_ratio:.2f}x" if self.tech.rs_ratio else "N/A",
             "adv_30d":         f"{self.tech.adv_30d:,.0f}",
             "week_return":     f"{self.tech.week_return:+.1f}%",
             "month_return":    f"{self.tech.month_return:+.1f}%",
             "rsi":             f"{self.tech.rsi_val:.0f}",
             "vol_ratio":       f"{self.tech.volume_ratio:.2f}x",
+            "52wk_position":   f"{self.tech.pct_from_52wk_low:+.0f}% / -{self.tech.pct_from_52wk_high:.0f}%",
             "tech_status":     self.tech.status,
             "classification":  self.classification,
         }

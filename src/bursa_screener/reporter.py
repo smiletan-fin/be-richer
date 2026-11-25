@@ -77,14 +77,16 @@ def print_screening_table(results: list[StockResult], show_rejected: bool = Fals
         ("Ticker",      "left",  6),
         ("Name",        "left",  22),
         ("Price",       "right", 8),
-        ("Fund/60",     "right", 7),
-        ("Tech/20",     "right", 7),
+        ("Fund/65",     "right", 7),
+        ("Tech/25",     "right", 7),
         ("Total",       "right", 6),
         ("PE",          "right", 6),
         ("PB",          "right", 5),
         ("ROE",         "right", 6),
+        ("EPSGrowth",   "right", 9),
         ("NetGear",     "right", 8),
         ("DivYld",      "right", 7),
+        ("RS Ratio",    "right", 8),
         ("RSI",         "right", 5),
         ("VolRatio",    "right", 8),
         ("WkRet",       "right", 7),
@@ -118,8 +120,10 @@ def print_screening_table(results: list[StockResult], show_rejected: bool = Fals
             row["pe_ttm"],
             row["pb"],
             row["roe"],
+            row["earnings_growth"],
             row["net_gearing"],
             row["div_yield"],
+            row["rs_ratio"],
             row["rsi"],
             row["vol_ratio"],
             wk_str,
@@ -147,8 +151,8 @@ def print_group_panel(results: list[StockResult], classification: str) -> None:
 
         lines.append(f"[bold]{r.ticker}[/bold]  {r.long_name or ''}")
         lines.append(
-            f"  Scores: Fund=[bold]{r.fundamental_score}/60[/bold]  "
-            f"Tech=[bold]{r.technical_score}/20[/bold]  "
+            f"  Scores: Fund=[bold]{r.fundamental_score}/65[/bold]  "
+            f"Tech=[bold]{r.technical_score}/25[/bold]  "
             f"Total=[bold]{r.total_score}[/bold]"
         )
         lines.append(f"  {fund_breakdown}")

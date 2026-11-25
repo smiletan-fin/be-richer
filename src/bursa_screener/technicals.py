@@ -1,7 +1,9 @@
 """
-Technical scoring engine — maps to your 20-point technical framework.
+Technical scoring engine — Enhanced 25-point framework.
 
-Scoring map (matches your spec exactly):
+Aligned with industry standards (Minervini SEPA, O'Neil CAN SLIM):
+
+Scoring map:
     20MA                3 pts
     50MA                3 pts
     200MA               3 pts
@@ -10,14 +12,21 @@ Scoring map (matches your spec exactly):
     Volume              3 pts
     Breakout / Base     2 pts
     Support/Resistance  2 pts
+    Relative Strength   3 pts  (NEW - vs index performance)
+    52-Week Position    2 pts  (NEW - Minervini template)
     ─────────────────────────
-    Total              20 pts
+    Total              25 pts
+
+Industry alignment:
+- Relative Strength: Compare stock vs KLCI index (momentum factor)
+- 52-Week Position: Minervini requires price >25% above 52-wk low, within 25% of high
+- Trend Template completion with MA stacking checks
 
 Returns a TechnicalScore dataclass with per-factor breakdown,
 total score, and a status label:
-    "Confirmed Uptrend"   ≥ 14 / 20
-    "Early Re-Rating"      9 – 13 / 20
-    "Downtrend/Value Trap" < 9 / 20
+    "Confirmed Uptrend"   ≥ 18 / 25
+    "Early Re-Rating"     12 – 17 / 25
+    "Downtrend/Value Trap" < 12 / 25
 """
 
 from __future__ import annotations
@@ -74,6 +83,17 @@ MA50_TREND_LOOKBACK = 10
 WEEK_DAYS = 6    # 5 trading days + 1 for diff
 MONTH_DAYS = 21  # ~20 trading days
 QUARTER_DAYS = 63  # ~3 months
+HALF_YEAR_DAYS = 126  # ~6 months
+
+# 52-Week position thresholds (Minervini template)
+MINERVINI_ABOVE_52WK_LOW = 0.25    # Must be >25% above 52-week low
+MINERVINI_BELOW_52WK_HIGH = 0.25  # Must be within 25% of 52-week high
+
+# Relative Strength thresholds
+RS_STRONG = 1.5      # Stock outperforming index by 50%+
+RS_GOOD = 1.2        # Stock outperforming index by 20%+
+RS_NEUTRAL = 1.0     # At par with index
+RS_WEAK = 0.8        # Underperforming by 20%+
 
 
 # ── helpers ───────────────────────────────────────────────────────────────────
@@ -129,21 +149,56 @@ def _adv(volume: pd.Series, window: int = ADV_PERIOD) -> float:
     return float(volume.tail(window).mean())
 
 
+# ── Index data for Relative Strength ──────────────────────────────────────────
+# Cache index returns to avoid repeated fetches
+_INDEX_RETURNS_CACHE: dict[str, float] = {}
+
+def get_index_return(period_days: int = HALF_YEAR_DAYS) -> float:
+    """
+    Get KLCI index return for relative strength calculation.
+    Returns the percentage return over the specified period.
+    Caches result to avoid repeated API calls.
+    """
+    cache_key = f"klci_{period_days}"
+    if cache_key in _INDEX_RETURNS_CACHE:
+        return _INDEX_RETURNS_CACHE[cache_key]
+    
+    try:
+        import yfinance as yf
+        # ^KLSE is the FTSE Bursa Malaysia KLCI
+        df = yf.download("^KLSE", period="1y", progress=False, auto_adjust=True)
+        if df is not None and len(df) >= period_days:
+            close = df["Close"]
+            if isinstance(close, pd.DataFrame):
+                close = close.iloc[:, 0]
+            index_return = float((close.iloc[-1] / close.iloc[-period_days] - 1) * 100)
+            _INDEX_RETURNS_CACHE[cache_key] = index_return
+            return index_return
+    except Exception:
+        pass
+    
+    # Default to 0 if can't fetch index data
+    _INDEX_RETURNS_CACHE[cache_key] = 0.0
+    return 0.0
+
+
 # ── result dataclass ──────────────────────────────────────────────────────────
 
 @dataclass
 class TechnicalScore:
     ticker: str
 
-    # individual factor scores
-    score_20ma:   int = 0   # max 3
-    score_50ma:   int = 0   # max 3
-    score_200ma:  int = 0   # max 3
-    score_rsi:    int = 0   # max 2
-    score_macd:   int = 0   # max 2
-    score_volume: int = 0   # max 3
-    score_breakout: int = 0 # max 2
-    score_support:  int = 0 # max 2
+    # individual factor scores (updated for 25-point system)
+    score_20ma:     int = 0   # max 3
+    score_50ma:     int = 0   # max 3
+    score_200ma:    int = 0   # max 3
+    score_rsi:      int = 0   # max 2
+    score_macd:     int = 0   # max 2
+    score_volume:   int = 0   # max 3
+    score_breakout: int = 0   # max 2
+    score_support:  int = 0   # max 2
+    score_rs:       int = 0   # max 3 (NEW - Relative Strength)
+    score_52wk:     int = 0   # max 2 (NEW - 52-Week Position)
 
     # computed values for display
     price:        float = 0.0
@@ -157,6 +212,11 @@ class TechnicalScore:
     macd_signal:  float = 0.0
     week_return:  float = 0.0  # 5-day return %
     month_return: float = 0.0  # 20-day return %
+    
+    # NEW: Relative strength and position metrics
+    rs_ratio:      float = 0.0  # Stock return / Index return
+    pct_from_52wk_high: float = 0.0  # How far below 52-week high (%)
+    pct_from_52wk_low:  float = 0.0  # How far above 52-week low (%)
 
     error: str | None = None
     detail: dict = field(default_factory=dict)
@@ -167,14 +227,15 @@ class TechnicalScore:
             self.score_20ma + self.score_50ma + self.score_200ma
             + self.score_rsi + self.score_macd
             + self.score_volume + self.score_breakout + self.score_support
+            + self.score_rs + self.score_52wk
         )
 
     @property
     def status(self) -> str:
         t = self.total
-        if t >= 14:
+        if t >= 18:  # Updated threshold for 25-point system
             return "Confirmed Uptrend"
-        elif t >= 9:
+        elif t >= 12:  # Updated threshold
             return "Early Re-Rating"
         else:
             return "Downtrend/Value Trap"
@@ -349,6 +410,53 @@ def score_technicals(ticker: str, df: pd.DataFrame | None) -> TechnicalScore:
     else:
         result.score_support = 0
 
+    # ── Relative Strength score (max 3, NEW) ─────────────────────────────────
+    # Compare stock's 6-month return to KLCI index return
+    half_year_ret = float((close.iloc[-1] / close.iloc[-HALF_YEAR_DAYS] - 1) * 100) if len(close) >= HALF_YEAR_DAYS else month_ret * 3
+    index_return = get_index_return(HALF_YEAR_DAYS)
+    
+    # Calculate relative strength ratio
+    if index_return != 0:
+        rs_ratio = (1 + half_year_ret / 100) / (1 + index_return / 100)
+    else:
+        rs_ratio = 1 + half_year_ret / 100  # Compare to flat if no index data
+    
+    result.rs_ratio = round(rs_ratio, 2)
+    
+    if rs_ratio >= RS_STRONG:
+        result.score_rs = 3
+    elif rs_ratio >= RS_GOOD:
+        result.score_rs = 2
+    elif rs_ratio >= RS_NEUTRAL:
+        result.score_rs = 1
+    else:
+        result.score_rs = 0
+
+    # ── 52-Week Position score (max 2, NEW - Minervini template) ─────────────
+    # Check: >25% above 52-week low AND within 25% of 52-week high
+    high_52wk = float(high.tail(252).max()) if len(high) >= 252 else float(high.max())
+    low_52wk = float(low.tail(252).min()) if len(low) >= 252 else float(low.min())
+    
+    if low_52wk > 0 and high_52wk > 0:
+        pct_above_low = (last_close - low_52wk) / low_52wk
+        pct_below_high = (high_52wk - last_close) / high_52wk
+        
+        result.pct_from_52wk_high = round(pct_below_high * 100, 1)
+        result.pct_from_52wk_low = round(pct_above_low * 100, 1)
+        
+        # Minervini criteria: >25% above low AND within 25% of high
+        above_low_ok = pct_above_low >= MINERVINI_ABOVE_52WK_LOW
+        near_high_ok = pct_below_high <= MINERVINI_BELOW_52WK_HIGH
+        
+        if above_low_ok and near_high_ok:
+            result.score_52wk = 2  # In the "sweet spot"
+        elif above_low_ok or near_high_ok:
+            result.score_52wk = 1  # Partial criteria met
+        else:
+            result.score_52wk = 0  # Neither criteria met
+    else:
+        result.score_52wk = 1  # Partial credit if data unavailable
+
     # ── detail dict for transparency ─────────────────────────────────────────
     result.detail = {
         "price_above_20ma":  last_ma20  is not None and last_close > last_ma20,
@@ -359,6 +467,12 @@ def score_technicals(ticker: str, df: pd.DataFrame | None) -> TechnicalScore:
         "vol_ratio_5d_vs_30d": round(vol_ratio, 2),
         "close_pct_of_3m_high": round(close_pct_of_3m_high * 100, 1),
         "held_support":      held_support,
+        # NEW metrics
+        "relative_strength": round(rs_ratio, 2),
+        "index_return_6m":   round(index_return, 1),
+        "stock_return_6m":   round(half_year_ret, 1),
+        "pct_from_52wk_high": result.pct_from_52wk_high,
+        "pct_from_52wk_low":  result.pct_from_52wk_low,
     }
 
     return result
