@@ -1,0 +1,691 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GitHub SSH Key Setup - Alias: smile</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 40px 20px;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+
+        h1 {
+            text-align: center;
+            color: white;
+            margin-bottom: 10px;
+            font-size: 2.5rem;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .subtitle {
+            text-align: center;
+            color: rgba(255,255,255,0.9);
+            margin-bottom: 40px;
+            font-size: 1.2rem;
+        }
+
+        .step-card {
+            background: white;
+            border-radius: 16px;
+            padding: 30px;
+            margin-bottom: 25px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.15);
+            transition: transform 0.3s ease;
+        }
+
+        .step-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .step-header {
+            display: flex;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+
+        .step-number {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            width: 50px;
+            height: 50px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.5rem;
+            font-weight: bold;
+            margin-right: 15px;
+            flex-shrink: 0;
+        }
+
+        .step-title {
+            font-size: 1.4rem;
+            color: #333;
+            font-weight: 600;
+        }
+
+        .step-content {
+            color: #555;
+            line-height: 1.8;
+        }
+
+        .step-content p {
+            margin-bottom: 15px;
+        }
+
+        .code-block {
+            background: #1e1e1e;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 15px 0;
+            overflow-x: auto;
+            position: relative;
+        }
+
+        .code-block code {
+            color: #e6e6e6;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.95rem;
+            line-height: 1.6;
+            white-space: pre;
+        }
+
+        .code-block .comment {
+            color: #6a9955;
+        }
+
+        .code-block .command {
+            color: #dcdcaa;
+        }
+
+        .code-block .string {
+            color: #ce9178;
+        }
+
+        .code-block .keyword {
+            color: #569cd6;
+        }
+
+        .config-block {
+            background: #282c34;
+            border-radius: 10px;
+            padding: 20px;
+            margin: 15px 0;
+            border-left: 4px solid #667eea;
+        }
+
+        .config-block code {
+            color: #abb2bf;
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+            font-size: 0.9rem;
+            line-height: 1.8;
+            white-space: pre;
+            display: block;
+        }
+
+        .config-block .config-key {
+            color: #e06c75;
+        }
+
+        .config-block .config-value {
+            color: #98c379;
+        }
+
+        .note {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+            padding: 15px 20px;
+            border-radius: 0 8px 8px 0;
+            margin: 15px 0;
+        }
+
+        .note-title {
+            font-weight: 600;
+            color: #856404;
+            margin-bottom: 5px;
+        }
+
+        .note-content {
+            color: #856404;
+            font-size: 0.95rem;
+        }
+
+        .success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+            padding: 15px 20px;
+            border-radius: 0 8px 8px 0;
+            margin: 15px 0;
+        }
+
+        .success-title {
+            font-weight: 600;
+            color: #155724;
+            margin-bottom: 5px;
+        }
+
+        .success-content {
+            color: #155724;
+            font-size: 0.95rem;
+        }
+
+        .info {
+            background: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            padding: 15px 20px;
+            border-radius: 0 8px 8px 0;
+            margin: 15px 0;
+        }
+
+        .info-title {
+            font-weight: 600;
+            color: #0c5460;
+            margin-bottom: 5px;
+        }
+
+        .info-content {
+            color: #0c5460;
+            font-size: 0.95rem;
+        }
+
+        ul {
+            margin: 10px 0 10px 20px;
+        }
+
+        li {
+            margin-bottom: 8px;
+        }
+
+        .emoji {
+            font-size: 1.2rem;
+            margin-right: 5px;
+        }
+
+        .copy-hint {
+            color: #888;
+            font-size: 0.8rem;
+            text-align: right;
+            margin-top: 5px;
+        }
+
+        .summary-card {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+            color: white;
+            border-radius: 16px;
+            padding: 30px;
+            margin-top: 30px;
+            text-align: center;
+        }
+
+        .summary-card h2 {
+            font-size: 1.8rem;
+            margin-bottom: 15px;
+        }
+
+        .summary-card p {
+            font-size: 1.1rem;
+            opacity: 0.95;
+        }
+
+        .final-command {
+            background: rgba(255,255,255,0.2);
+            border-radius: 10px;
+            padding: 15px 25px;
+            margin-top: 20px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 1.3rem;
+            display: inline-block;
+        }
+
+        @media (max-width: 600px) {
+            h1 {
+                font-size: 1.8rem;
+            }
+            
+            .step-card {
+                padding: 20px;
+            }
+            
+            .step-number {
+                width: 40px;
+                height: 40px;
+                font-size: 1.2rem;
+            }
+            
+            .step-title {
+                font-size: 1.2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔐 GitHub SSH Key Setup</h1>
+        <p class="subtitle">Create SSH key with alias <strong>"smile"</strong> for GitHub on macOS</p>
+
+        <!-- Step 1 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number">1</div>
+                <h2 class="step-title">Generate the SSH Key</h2>
+            </div>
+            <div class="step-content">
+                <p>Open your Terminal and run this command to generate a new SSH key:</p>
+                
+                <div class="code-block">
+                    <code>ssh-keygen -t ed25519 -C <span class="string">"your_email@example.com"</span> -f ~/.ssh/smile</code>
+                </div>
+                <p class="copy-hint">📋 Copy and paste this command into Terminal</p>
+
+                <p>When prompted:</p>
+                <ul>
+                    <li><strong>Enter passphrase:</strong> Type a secure passphrase (recommended) or press Enter for none</li>
+                    <li><strong>Enter same passphrase again:</strong> Confirm your passphrase</li>
+                </ul>
+
+                <div class="success">
+                    <div class="success-title">✅ What this creates:</div>
+                    <div class="success-content">
+                        <strong>~/.ssh/smile</strong> — Your private key (keep this secret!)<br>
+                        <strong>~/.ssh/smile.pub</strong> — Your public key (share this with GitHub)
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number">2</div>
+                <h2 class="step-title">Start the SSH Agent</h2>
+            </div>
+            <div class="step-content">
+                <p>Start the SSH agent in the background:</p>
+                
+                <div class="code-block">
+                    <code>eval <span class="string">"$(ssh-agent -s)"</span></code>
+                </div>
+
+                <p>You should see output like: <code>Agent pid 12345</code></p>
+            </div>
+        </div>
+
+        <!-- Step 3 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number">3</div>
+                <h2 class="step-title">Configure SSH Config File</h2>
+            </div>
+            <div class="step-content">
+                <p>Create or edit the SSH config file to set up the "smile" alias:</p>
+                
+                <div class="code-block">
+                    <code>nano ~/.ssh/config</code>
+                </div>
+
+                <p>Add the following configuration:</p>
+
+                <div class="config-block">
+                    <code><span class="config-key">Host</span> <span class="config-value">smile</span>
+    <span class="config-key">HostName</span> <span class="config-value">github.com</span>
+    <span class="config-key">User</span> <span class="config-value">git</span>
+    <span class="config-key">IdentityFile</span> <span class="config-value">~/.ssh/smile</span>
+    <span class="config-key">AddKeysToAgent</span> <span class="config-value">yes</span>
+    <span class="config-key">UseKeychain</span> <span class="config-value">yes</span></code>
+                </div>
+
+                <div class="info">
+                    <div class="info-title">💡 Nano Editor Commands:</div>
+                    <div class="info-content">
+                        <strong>Ctrl + O</strong> → Save the file<br>
+                        <strong>Enter</strong> → Confirm filename<br>
+                        <strong>Ctrl + X</strong> → Exit nano
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 4 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number">4</div>
+                <h2 class="step-title">Add Key to SSH Agent & Keychain</h2>
+            </div>
+            <div class="step-content">
+                <p>Add your SSH private key to the SSH agent and store the passphrase in Keychain:</p>
+                
+                <div class="code-block">
+                    <code>ssh-add --apple-use-keychain ~/.ssh/smile</code>
+                </div>
+
+                <p>If prompted, enter the passphrase you created in Step 1.</p>
+
+                <div class="note">
+                    <div class="note-title">📝 Note:</div>
+                    <div class="note-content">
+                        The <code>--apple-use-keychain</code> flag stores your passphrase in macOS Keychain, so you won't have to enter it every time.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 5 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number">5</div>
+                <h2 class="step-title">Read & Copy the Public Key</h2>
+            </div>
+            <div class="step-content">
+                <p><strong>Option 1:</strong> View/read the public key in terminal:</p>
+                
+                <div class="code-block">
+                    <code>cat ~/.ssh/smile.pub</code>
+                </div>
+
+                <p>This displays your key, which looks like:</p>
+                <div class="code-block">
+                    <code><span class="comment">ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAI... your_email@example.com</span></code>
+                </div>
+
+                <p><strong>Option 2:</strong> Copy directly to clipboard (recommended):</p>
+                <div class="code-block">
+                    <code>pbcopy < ~/.ssh/smile.pub</code>
+                </div>
+
+                <div class="success">
+                    <div class="success-title">✅ Done!</div>
+                    <div class="success-content">
+                        Your public key is now copied to clipboard and ready to paste into GitHub (Cmd + V).
+                    </div>
+                </div>
+
+                <div class="info">
+                    <div class="info-title">💡 Key Location:</div>
+                    <div class="info-content">
+                        <strong>Public key:</strong> <code>~/.ssh/smile.pub</code> (safe to share)<br>
+                        <strong>Private key:</strong> <code>~/.ssh/smile</code> (keep secret!)
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 6 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number">6</div>
+                <h2 class="step-title">Add Key to GitHub</h2>
+            </div>
+            <div class="step-content">
+                <p>Now add the copied public key to your GitHub account:</p>
+                
+                <ol style="margin-left: 20px; line-height: 2;">
+                    <li>Go to <a href="https://github.com/settings/keys" target="_blank" style="color: #667eea; font-weight: 600;">github.com/settings/keys</a></li>
+                    <li>Click the green <strong>"New SSH key"</strong> button</li>
+                    <li>Fill in the form:
+                        <ul>
+                            <li><strong>Title:</strong> <code>smile</code> (or any descriptive name)</li>
+                            <li><strong>Key type:</strong> Authentication Key</li>
+                            <li><strong>Key:</strong> Paste your public key (Cmd + V)</li>
+                        </ul>
+                    </li>
+                    <li>Click <strong>"Add SSH key"</strong></li>
+                    <li>Confirm with your GitHub password if prompted</li>
+                </ol>
+            </div>
+        </div>
+
+        <!-- Step 7 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number">7</div>
+                <h2 class="step-title">Test the Connection</h2>
+            </div>
+            <div class="step-content">
+                <p>Verify that everything is working correctly:</p>
+                
+                <div class="code-block">
+                    <code>ssh -T smile</code>
+                </div>
+
+                <p>If this is your first time connecting, you'll see a message like:</p>
+                <div class="code-block">
+                    <code><span class="comment">The authenticity of host 'github.com (IP)' can't be established.
+ED25519 key fingerprint is SHA256:+DiY3wvvV6TuJJhbpZisF/zLDA0zPMSvHdkr4UvCOqU.
+Are you sure you want to continue connecting (yes/no/[fingerprint])?</span></code>
+                </div>
+
+                <p>Type <strong>yes</strong> and press Enter.</p>
+
+                <div class="success">
+                    <div class="success-title">🎉 Success Message:</div>
+                    <div class="success-content">
+                        <code>Hi username! You've successfully authenticated, but GitHub does not provide shell access.</code>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 8 -->
+        <div class="step-card">
+            <div class="step-header">
+                <div class="step-number">8</div>
+                <h2 class="step-title">Using Your SSH Alias</h2>
+            </div>
+            <div class="step-content">
+                <p>Now you can use your "smile" alias instead of <code>github.com</code> in Git commands:</p>
+
+                <p><strong>Clone a repository:</strong></p>
+                <div class="code-block">
+                    <code><span class="comment"># Instead of:</span>
+git clone git@github.com:username/repo.git
+
+<span class="comment"># Use:</span>
+git clone git@<span class="string">smile</span>:username/repo.git</code>
+                </div>
+
+                <p><strong>Add remote to existing repo:</strong></p>
+                <div class="code-block">
+                    <code>git remote add origin git@<span class="string">smile</span>:username/repo.git</code>
+                </div>
+
+                <p><strong>Change existing remote:</strong></p>
+                <div class="code-block">
+                    <code>git remote set-url origin git@<span class="string">smile</span>:username/repo.git</code>
+                </div>
+            </div>
+        </div>
+
+        <!-- Removal Section Header -->
+        <h2 style="color: white; text-align: center; margin: 50px 0 30px 0; font-size: 1.8rem;">
+            🗑️ Removing the SSH Key
+        </h2>
+        <p class="subtitle" style="margin-bottom: 30px;">If you need to remove the "smile" SSH key from your machine</p>
+
+        <!-- Remove Step 1 -->
+        <div class="step-card" style="border-left: 4px solid #dc3545;">
+            <div class="step-header">
+                <div class="step-number" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);">1</div>
+                <h2 class="step-title">Remove Key from SSH Agent</h2>
+            </div>
+            <div class="step-content">
+                <p>First, remove the key from the SSH agent (if it's currently loaded):</p>
+                
+                <div class="code-block">
+                    <code>ssh-add -d ~/.ssh/smile</code>
+                </div>
+
+                <p>To verify it's removed, list all keys in the agent:</p>
+                <div class="code-block">
+                    <code>ssh-add -l</code>
+                </div>
+
+                <div class="info">
+                    <div class="info-title">💡 Tip:</div>
+                    <div class="info-content">
+                        If you see "The agent has no identities" or your smile key is not listed, it's been successfully removed from the agent.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Remove Step 2 -->
+        <div class="step-card" style="border-left: 4px solid #dc3545;">
+            <div class="step-header">
+                <div class="step-number" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);">2</div>
+                <h2 class="step-title">Remove Key from macOS Keychain</h2>
+            </div>
+            <div class="step-content">
+                <p>Remove the passphrase stored in macOS Keychain:</p>
+                
+                <div class="code-block">
+                    <code>security delete-generic-password -l <span class="string">"SSH: ~/.ssh/smile"</span></code>
+                </div>
+
+                <p><strong>Alternative method using Keychain Access app:</strong></p>
+                <ol style="margin-left: 20px; line-height: 2;">
+                    <li>Open <strong>Keychain Access</strong> (search in Spotlight with Cmd + Space)</li>
+                    <li>Search for <code>smile</code> or <code>SSH</code></li>
+                    <li>Find the entry related to your SSH key</li>
+                    <li>Right-click and select <strong>"Delete"</strong></li>
+                </ol>
+            </div>
+        </div>
+
+        <!-- Remove Step 3 -->
+        <div class="step-card" style="border-left: 4px solid #dc3545;">
+            <div class="step-header">
+                <div class="step-number" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);">3</div>
+                <h2 class="step-title">Delete the Key Files</h2>
+            </div>
+            <div class="step-content">
+                <p>Remove both the private and public key files:</p>
+                
+                <div class="code-block">
+                    <code><span class="comment"># Remove the private key</span>
+rm ~/.ssh/smile
+
+<span class="comment"># Remove the public key</span>
+rm ~/.ssh/smile.pub</code>
+                </div>
+
+                <p>Or remove both in one command:</p>
+                <div class="code-block">
+                    <code>rm ~/.ssh/smile ~/.ssh/smile.pub</code>
+                </div>
+
+                <div class="note">
+                    <div class="note-title">⚠️ Warning:</div>
+                    <div class="note-content">
+                        This action is <strong>irreversible</strong>. Make sure you no longer need this key before deleting. If you have repositories using this key, you'll need to set up a new key or update the remote URLs.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Remove Step 4 -->
+        <div class="step-card" style="border-left: 4px solid #dc3545;">
+            <div class="step-header">
+                <div class="step-number" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);">4</div>
+                <h2 class="step-title">Remove SSH Config Entry</h2>
+            </div>
+            <div class="step-content">
+                <p>Edit the SSH config file to remove the "smile" alias:</p>
+                
+                <div class="code-block">
+                    <code>nano ~/.ssh/config</code>
+                </div>
+
+                <p>Find and delete this entire block:</p>
+
+                <div class="config-block" style="border-left-color: #dc3545;">
+                    <code><span class="config-key">Host</span> <span class="config-value">smile</span>
+    <span class="config-key">HostName</span> <span class="config-value">github.com</span>
+    <span class="config-key">User</span> <span class="config-value">git</span>
+    <span class="config-key">IdentityFile</span> <span class="config-value">~/.ssh/smile</span>
+    <span class="config-key">AddKeysToAgent</span> <span class="config-value">yes</span>
+    <span class="config-key">UseKeychain</span> <span class="config-value">yes</span></code>
+                </div>
+
+                <p>Save and exit (<strong>Ctrl + O</strong>, Enter, <strong>Ctrl + X</strong>).</p>
+            </div>
+        </div>
+
+        <!-- Remove Step 5 -->
+        <div class="step-card" style="border-left: 4px solid #dc3545;">
+            <div class="step-header">
+                <div class="step-number" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);">5</div>
+                <h2 class="step-title">Remove Key from GitHub</h2>
+            </div>
+            <div class="step-content">
+                <p>Remove the public key from your GitHub account:</p>
+                
+                <ol style="margin-left: 20px; line-height: 2;">
+                    <li>Go to <a href="https://github.com/settings/keys" target="_blank" style="color: #dc3545; font-weight: 600;">github.com/settings/keys</a></li>
+                    <li>Find the SSH key titled <strong>"smile"</strong> (or whatever title you used)</li>
+                    <li>Click the <strong>"Delete"</strong> button next to it</li>
+                    <li>Confirm the deletion when prompted</li>
+                </ol>
+
+                <div class="success">
+                    <div class="success-title">✅ Verification:</div>
+                    <div class="success-content">
+                        Test that the key is fully removed by running:<br>
+                        <code style="background: #e8e8e8; padding: 2px 8px; border-radius: 4px;">ssh -T smile</code><br>
+                        You should see a connection error since the alias no longer exists.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Remove All -->
+        <div class="step-card" style="border: 2px solid #dc3545; background: #fff5f5;">
+            <div class="step-header">
+                <div class="step-number" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%);">⚡</div>
+                <h2 class="step-title">Quick Remove (All-in-One Command)</h2>
+            </div>
+            <div class="step-content">
+                <p>If you want to quickly remove everything from your local machine (except GitHub), run:</p>
+                
+                <div class="code-block">
+                    <code><span class="comment"># Remove from agent, delete files, and show remaining config</span>
+ssh-add -d ~/.ssh/smile 2>/dev/null; \
+rm -f ~/.ssh/smile ~/.ssh/smile.pub; \
+echo <span class="string">"✅ Key files deleted. Remember to:"</span>; \
+echo <span class="string">"   1. Edit ~/.ssh/config to remove the 'smile' block"</span>; \
+echo <span class="string">"   2. Delete the key from github.com/settings/keys"</span></code>
+                </div>
+
+                <div class="note">
+                    <div class="note-title">📝 Remember:</div>
+                    <div class="note-content">
+                        You still need to manually edit <code>~/.ssh/config</code> and remove the key from GitHub.
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary -->
+        <div class="summary-card">
+            <h2>🎊 All Done!</h2>
+            <p>Your SSH key alias "smile" is now configured for GitHub.</p>
+            <p>Test your connection anytime with:</p>
+            <div class="final-command">ssh -T smile</div>
+        </div>
+
+    </div>
+</body>
+</html>
