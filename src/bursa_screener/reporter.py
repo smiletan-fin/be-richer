@@ -48,6 +48,22 @@ def print_summary(results: list[StockResult], universe_size: int, elapsed: float
     early      = [r for r in results if r.classification == "EARLY RE-RATING"]
     watchlist  = [r for r in results if r.classification == "WATCHLIST"]
     rejected   = [r for r in results if r.classification == "REJECT"]
+    
+    # Check if any stock has FMP or KLSE data
+    has_fmp = any(r.fund.has_fmp_data for r in results)
+    has_klse = any(r.fund.has_klse_data for r in results)
+    klse_count = sum(1 for r in results if r.fund.has_klse_data)
+    
+    # Build data sources status line
+    sources = ["yfinance (15-min delayed)"]
+    if has_klse:
+        sources.append(f"[green]KLSE Screener ({klse_count} stocks)[/green]")
+    else:
+        sources.append("[dim]KLSE Screener disabled[/dim]")
+    if has_fmp:
+        sources.append("[green]+ FMP earnings surprises[/green]")
+    else:
+        sources.append("[dim]FMP disabled[/dim]")
 
     ts = datetime.now().strftime("%Y-%m-%d %H:%M")
 
@@ -58,12 +74,16 @@ def print_summary(results: list[StockResult], universe_size: int, elapsed: float
         f"  🟡 EARLY RE-RATING: [bold yellow]{len(early)}[/bold yellow]\n"
         f"  🔵 WATCHLIST      : [bold cyan]{len(watchlist)}[/bold cyan]\n"
         f"  🔴 REJECT         : [dim red]{len(rejected)}[/dim red]\n\n"
-        f"[dim]Data: yfinance (15-min delayed) — Core EPS normalization requires Level 2 LLM analysis[/dim]"
+        f"[dim]Data: {' • '.join(sources)} — Core EPS normalization requires Level 2 LLM analysis[/dim]"
     )
     console.print(Panel(summary, border_style="blue", padding=(1, 2)))
 
 
 def print_screening_table(results: list[StockResult], show_rejected: bool = False) -> None:
+    # Check if any stock has FMP or KLSE data
+    has_fmp = any(r.fund.has_fmp_data for r in results)
+    has_klse = any(r.fund.has_klse_data for r in results)
+    
     table = Table(
         title="📊 Full Screening Table",
         box=box.ROUNDED,
@@ -77,13 +97,29 @@ def print_screening_table(results: list[StockResult], show_rejected: bool = Fals
         ("Ticker",      "left",  6),
         ("Name",        "left",  22),
         ("Price",       "right", 8),
-        ("Fund/65",     "right", 7),
+        ("Fund",        "right", 7),
         ("Tech/25",     "right", 7),
         ("Total",       "right", 6),
         ("PE",          "right", 6),
         ("PB",          "right", 5),
         ("ROE",         "right", 6),
         ("EPSGrowth",   "right", 9),
+    ]
+    
+    # Add Earnings Surprise column if FMP data available
+    if has_fmp:
+        cols.append(("EarnSurp", "right", 8))
+    
+    # Add KLSE enhanced columns if KLSE data available
+    if has_klse:
+        cols.extend([
+            ("QoQ%",   "right", 7),
+            ("YoY%",   "right", 7),
+            ("Mom",    "right", 5),
+            ("Inst",   "right", 5),
+        ])
+    
+    cols.extend([
         ("NetGear",     "right", 8),
         ("DivYld",      "right", 7),
         ("RS Ratio",    "right", 8),
@@ -92,7 +128,7 @@ def print_screening_table(results: list[StockResult], show_rejected: bool = Fals
         ("WkRet",       "right", 7),
         ("Tech Status", "left",  20),
         ("Class",       "left",  16),
-    ]
+    ])
 
     for name, justify, min_width in cols:
         table.add_column(name, justify=justify, min_width=min_width, no_wrap=True)
@@ -109,8 +145,9 @@ def print_screening_table(results: list[StockResult], show_rejected: bool = Fals
         # colour week return
         wk = r.tech.week_return
         wk_str = f"[green]{wk:+.1f}%[/green]" if wk > 0 else f"[red]{wk:+.1f}%[/red]"
-
-        table.add_row(
+        
+        # Build row data
+        row_data = [
             f"[bold]{row['ticker']}[/bold]",
             row["name"],
             row["price"],
@@ -121,6 +158,28 @@ def print_screening_table(results: list[StockResult], show_rejected: bool = Fals
             row["pb"],
             row["roe"],
             row["earnings_growth"],
+        ]
+        
+        # Add earnings surprise if FMP data available
+        if has_fmp:
+            row_data.append(row["earnings_surprise"])
+        
+        # Add KLSE columns if available
+        if has_klse:
+            # Format QoQ/YoY with colors
+            qoq_val = r.fund.latest_qoq
+            yoy_val = r.fund.latest_yoy
+            qoq_str = f"[green]{qoq_val:+.1f}%[/green]" if qoq_val and qoq_val > 0 else (f"[red]{qoq_val:+.1f}%[/red]" if qoq_val and qoq_val < 0 else "[dim]—[/dim]")
+            yoy_str = f"[green]{yoy_val:+.1f}%[/green]" if yoy_val and yoy_val > 0 else (f"[red]{yoy_val:+.1f}%[/red]" if yoy_val and yoy_val < 0 else "[dim]—[/dim]")
+            
+            row_data.extend([
+                qoq_str if r.fund.has_klse_data else "[dim]—[/dim]",
+                yoy_str if r.fund.has_klse_data else "[dim]—[/dim]",
+                row["klse_momentum"],
+                row["klse_institutional"],
+            ])
+        
+        row_data.extend([
             row["net_gearing"],
             row["div_yield"],
             row["rs_ratio"],
@@ -129,6 +188,10 @@ def print_screening_table(results: list[StockResult], show_rejected: bool = Fals
             wk_str,
             row["tech_status"],
             f"[{style}]{emoji} {cls}[/{style}]",
+        ])
+
+        table.add_row(
+            *row_data,
             style=style if cls == "READY TO BUY" else "",
         )
 
@@ -148,13 +211,33 @@ def print_group_panel(results: list[StockResult], classification: str) -> None:
         fund_breakdown = r.fund.breakdown
         tech_detail    = r.tech.detail
         flags = r.fund.flags[:3]  # top 3 flags only
+        
+        # Format earnings surprise info
+        es_info = ""
+        if r.fund.has_fmp_data:
+            es_info = f"  EarnSurp=[bold]{r.fund.score_earnings_surprise}/5[/bold]"
+        
+        # Format KLSE enhanced info
+        klse_info = ""
+        if r.fund.has_klse_data:
+            klse_info = (
+                f"  KLSE=[bold]Mom={r.fund.score_earnings_momentum}/5 "
+                f"Con={r.fund.score_earnings_consistency}/3 "
+                f"Inst={r.fund.score_institutional_flow}/3[/bold]"
+            )
+            if r.fund.latest_qoq is not None or r.fund.latest_yoy is not None:
+                qoq_str = f"QoQ: {r.fund.latest_qoq:+.1f}%" if r.fund.latest_qoq is not None else ""
+                yoy_str = f"YoY: {r.fund.latest_yoy:+.1f}%" if r.fund.latest_yoy is not None else ""
+                klse_info += f"\n  [dim]Latest Quarterly: {qoq_str}  {yoy_str}[/dim]"
 
         lines.append(f"[bold]{r.ticker}[/bold]  {r.long_name or ''}")
         lines.append(
-            f"  Scores: Fund=[bold]{r.fundamental_score}/65[/bold]  "
+            f"  Scores: Fund=[bold]{r.fundamental_score}/{r.fund.max_score}[/bold]  "
             f"Tech=[bold]{r.technical_score}/25[/bold]  "
-            f"Total=[bold]{r.total_score}[/bold]"
+            f"Total=[bold]{r.total_score}[/bold]{es_info}"
         )
+        if klse_info:
+            lines.append(klse_info)
         lines.append(f"  {fund_breakdown}")
         lines.append(
             f"  Price: {r.tech.price:.3f}  MA20: {r.tech.ma20:.3f}  "

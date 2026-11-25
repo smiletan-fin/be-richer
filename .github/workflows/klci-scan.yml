@@ -17,6 +17,11 @@ on:
         required: false
         default: false
         type: boolean
+      enable_fmp:
+        description: 'Enable FMP earnings data (US stocks only - no Malaysian coverage)'
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   scan:
@@ -54,12 +59,19 @@ jobs:
         run: echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
 
       - name: Run KLCI Screener
+        env:
+          FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
         run: |
           mkdir -p results
+          FMP_FLAG=""
+          if [ "${{ inputs.enable_fmp }}" = "true" ]; then
+            FMP_FLAG="--fmp"
+          fi
+          
           if [ "${{ inputs.show_rejected }}" = "true" ]; then
-            python -m bursa_screener --tier ${{ inputs.tier }} --show-rejected --html
+            python -m bursa_screener --tier ${{ inputs.tier }} --show-rejected --html $FMP_FLAG
           else
-            python -m bursa_screener --tier ${{ inputs.tier }} --html
+            python -m bursa_screener --tier ${{ inputs.tier }} --html $FMP_FLAG
           fi
 
       - name: Upload HTML Report
@@ -78,6 +90,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Tier:** ${{ inputs.tier }}" >> $GITHUB_STEP_SUMMARY
           echo "**Show Rejected:** ${{ inputs.show_rejected }}" >> $GITHUB_STEP_SUMMARY
+          echo "**FMP Enabled:** ${{ inputs.enable_fmp }}" >> $GITHUB_STEP_SUMMARY
           echo "**Run:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📁 Reports Generated" >> $GITHUB_STEP_SUMMARY

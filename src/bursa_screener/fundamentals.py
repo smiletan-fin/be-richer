@@ -1,30 +1,34 @@
 """
-Fundamental scoring engine — Enhanced 65-point framework.
+Fundamental scoring engine — Enhanced 76-point framework.
 
-Aligned with industry standards (Piotroski F-Score, Quality Factor Investing):
+Aligned with industry standards (Piotroski F-Score, Quality Factor Investing, CAN SLIM):
 
 Scoring map:
-    A. Earnings Quality      10 pts  (reduced from 15)
-    B. Earnings Growth       10 pts  (NEW - critical for quality)
+    A. Earnings Quality      10 pts
+    B. Earnings Growth       10 pts  (CAN SLIM: >25% is excellent)
     C. ROE / ROIC            10 pts
     D. Financial Health      10 pts
-    E. Valuation Margin      12 pts  (reduced from 15)
+    E. Valuation Margin      12 pts
     F. Operating Cash Flow    5 pts
-    G. Dividends              3 pts  (reduced from 5 - growth stocks don't pay)
-    H. Improving Fundamentals 5 pts  (NEW - Piotroski-style YoY checks)
+    G. Dividends              3 pts  (reduced - growth stocks don't pay)
+    H. Improving Fundamentals 5 pts  (Piotroski-style YoY checks)
+    I. Earnings Momentum      5 pts  (KLSE quarterly QoQ/YoY data)
+    J. Earnings Consistency   3 pts  (KLSE consecutive growth quarters)
+    K. Institutional Flow     3 pts  (KLSE shareholding changes)
     ──────────────────────────────
-    Total                    65 pts
+    Total                    76 pts
+
+Data sources:
+- Primary: yfinance (free, 15-min delayed)
+- Enhanced: KLSE Screener (Malaysian stocks - more accurate, quarterly data)
+- Optional: Financial Modeling Prep (US stocks only - earnings surprises)
 
 Industry alignment:
 - Earnings Growth: CAN SLIM requires >25% EPS growth
+- Earnings Momentum: KLSE quarterly data for acceleration signals
+- Institutional Flow: EPF/KWAP/PNB buying = smart money
 - ROIC consideration: Research shows ROIC beats ROE 17:1
 - Improving Fundamentals: Piotroski F-Score elements
-- Reduced dividend weight: High-growth companies often don't pay dividends
-
-Limitations:
-- Core EPS (normalized) cannot be computed from yfinance alone.
-- YoY growth data may be incomplete for some stocks.
-- Forward PE from Yahoo analyst consensus — sparse for small caps.
 """
 
 from __future__ import annotations
@@ -34,6 +38,20 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from statistics import median
 from typing import Any
+
+# KLSE Screener integration (primary for Malaysian stocks)
+try:
+    from . import klse_fetcher
+    KLSE_AVAILABLE = True
+except ImportError:
+    KLSE_AVAILABLE = False
+
+# FMP integration (optional enhancement for US stocks)
+try:
+    from . import fmp_fetcher
+    FMP_AVAILABLE = True
+except ImportError:
+    FMP_AVAILABLE = False
 
 
 # ── constants ────────────────────────────────────────────────────────────────
@@ -178,15 +196,21 @@ SECTOR_PE_BENCHMARKS = load_sector_benchmarks()
 class FundamentalScore:
     ticker: str
 
-    # factor scores (updated weights)
-    score_earnings_quality: int = 0   # max 10 (reduced from 15)
-    score_earnings_growth:  int = 0   # max 10 (NEW)
+    # factor scores (updated weights - total 76 pts for KLSE, 65 base)
+    score_earnings_quality: int = 0   # max 10
+    score_earnings_growth:  int = 0   # max 10
     score_roe:              int = 0   # max 10
     score_financial_health: int = 0   # max 10
-    score_valuation:        int = 0   # max 12 (reduced from 15)
+    score_valuation:        int = 0   # max 12
     score_cashflow:         int = 0   # max  5
-    score_dividends:        int = 0   # max  3 (reduced from 5)
-    score_improving:        int = 0   # max  5 (NEW - Piotroski-style)
+    score_dividends:        int = 0   # max  3
+    score_improving:        int = 0   # max  5 (Piotroski-style)
+    score_earnings_surprise: int = 0  # max  5 (FMP data - US stocks only)
+    
+    # KLSE Screener enhanced scores (Malaysian stocks)
+    score_earnings_momentum:    int = 0  # max 5 (KLSE quarterly data)
+    score_earnings_consistency: int = 0  # max 3 (KLSE consecutive growth)
+    score_institutional_flow:   int = 0  # max 3 (KLSE shareholding)
 
     # display values
     pe_ttm:       float | None = None
@@ -198,9 +222,18 @@ class FundamentalScore:
     sector:       str | None   = None
     is_cyclical:  bool         = False
     
-    # NEW: Growth metrics
+    # Growth metrics
     earnings_growth_pct: float | None = None  # YoY EPS growth %
     revenue_growth_pct:  float | None = None  # YoY revenue growth %
+    
+    # Data source flags
+    has_fmp_data: bool = False    # FMP earnings surprise (US stocks)
+    has_klse_data: bool = False   # KLSE Screener data (Malaysian stocks)
+    earnings_beats: int | None = None  # Number of recent beats (out of 4)
+    
+    # KLSE quarterly data
+    latest_qoq: float | None = None  # Latest QoQ growth %
+    latest_yoy: float | None = None  # Latest YoY growth %
 
     # flags
     flags: list[str] = field(default_factory=list)
@@ -213,11 +246,24 @@ class FundamentalScore:
             + self.score_roe + self.score_financial_health 
             + self.score_valuation + self.score_cashflow 
             + self.score_dividends + self.score_improving
+            + self.score_earnings_surprise
+            + self.score_earnings_momentum + self.score_earnings_consistency
+            + self.score_institutional_flow
         )
 
     @property
+    def max_score(self) -> int:
+        """Maximum possible score based on data sources available."""
+        base = 65  # Base score without enhancements
+        if self.has_klse_data:
+            base += 11  # +5 momentum, +3 consistency, +3 institutional
+        if self.has_fmp_data:
+            base += 5   # +5 earnings surprise (rarely both)
+        return base
+
+    @property
     def breakdown(self) -> str:
-        return (
+        base = (
             f"EQ={self.score_earnings_quality}/10  "
             f"EG={self.score_earnings_growth}/10  "
             f"ROE={self.score_roe}/10  "
@@ -227,11 +273,20 @@ class FundamentalScore:
             f"Div={self.score_dividends}/3  "
             f"Imp={self.score_improving}/5"
         )
+        if self.has_klse_data:
+            base += (
+                f"  Mom={self.score_earnings_momentum}/5"
+                f"  Con={self.score_earnings_consistency}/3"
+                f"  Inst={self.score_institutional_flow}/3"
+            )
+        if self.has_fmp_data:
+            base += f"  ES={self.score_earnings_surprise}/5"
+        return base
 
 
 # ── scorer ────────────────────────────────────────────────────────────────────
 
-def score_fundamentals(ticker: str, info: dict[str, Any]) -> FundamentalScore:
+def score_fundamentals(ticker: str, info: dict[str, Any], fmp_data: dict[str, Any] | None = None, klse_data: dict[str, Any] | None = None) -> FundamentalScore:
     result = FundamentalScore(ticker=ticker)
 
     if not info or all(v is None for k, v in info.items() if k not in ("ticker",)):
@@ -534,5 +589,55 @@ def score_fundamentals(ticker: str, info: dict[str, Any]) -> FundamentalScore:
     
     if imp >= 4:
         result.flags.append("Strong fundamentals momentum ✓")
+
+    # ── I. Earnings Surprises (max 5, FMP data - US stocks only) ────────────────
+    # Score based on beat/miss streak from Financial Modeling Prep
+    if fmp_data and fmp_data.get("has_fmp_data"):
+        result.has_fmp_data = True
+        result.score_earnings_surprise = fmp_data.get("earnings_surprise_score", 0)
+        
+        # Add flag if provided
+        surprise_flag = fmp_data.get("earnings_surprise_flag")
+        if surprise_flag:
+            result.flags.append(surprise_flag)
+        
+        # Track beats count for display
+        score = result.score_earnings_surprise
+        if score >= 4:
+            result.earnings_beats = 3 + (score - 3)
+        elif score >= 2:
+            result.earnings_beats = score
+        else:
+            result.earnings_beats = 0
+
+    # ── J, K, L. KLSE Screener Enhanced Scores (Malaysian stocks only) ────────
+    # Score based on quarterly data and institutional activity
+    if klse_data and klse_data.get("has_klse_data"):
+        result.has_klse_data = True
+        
+        # J. Earnings Momentum (max 5) - from quarterly QoQ/YoY data
+        result.score_earnings_momentum = klse_data.get("earnings_momentum_score", 0)
+        momentum_flag = klse_data.get("earnings_momentum_flag")
+        if momentum_flag:
+            result.flags.append(momentum_flag)
+        
+        # K. Earnings Consistency (max 3) - consecutive growth quarters
+        result.score_earnings_consistency = klse_data.get("earnings_consistency_score", 0)
+        consistency_flag = klse_data.get("earnings_consistency_flag")
+        if consistency_flag:
+            result.flags.append(consistency_flag)
+        
+        # L. Institutional Flow (max 3) - shareholding changes
+        result.score_institutional_flow = klse_data.get("institutional_flow_score", 0)
+        institutional_flag = klse_data.get("institutional_flow_flag")
+        if institutional_flag:
+            result.flags.append(institutional_flag)
+        
+        # Store quarterly data for display
+        quarterly = klse_data.get("quarterly")
+        if quarterly and len(quarterly) > 0:
+            latest = quarterly[0]
+            result.latest_qoq = latest.get("qoq")
+            result.latest_yoy = latest.get("yoy")
 
     return result

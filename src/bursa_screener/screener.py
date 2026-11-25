@@ -31,6 +31,20 @@ from .reporter import print_all
 from .technicals import score_technicals
 from .universe import get_universe
 
+# FMP integration (optional - US stocks only)
+try:
+    from . import fmp_fetcher
+    FMP_AVAILABLE = True
+except ImportError:
+    FMP_AVAILABLE = False
+
+# KLSE Screener integration (primary for Malaysian stocks)
+try:
+    from . import klse_fetcher
+    KLSE_AVAILABLE = True
+except ImportError:
+    KLSE_AVAILABLE = False
+
 console = Console()
 
 
@@ -43,6 +57,7 @@ def run(
     refresh_universe: bool = False,
     use_cache: bool = True,
     skip_connectivity_check: bool = False,
+    use_fmp: bool = False,  # Disabled by default - no coverage for Malaysian stocks
 ) -> dict[str, str | None]:
     """
     Run the screener and return export paths.
@@ -56,6 +71,19 @@ def run(
         f"\n[bold blue]🔍 Bursa Malaysia Level 1 Screener[/bold blue]  "
         f"({len(universe)} tickers, tier={tier if not tickers else 'custom'}, {cache_status})\n"
     )
+
+    # Check FMP status
+    fmp_enabled = False
+    if use_fmp and FMP_AVAILABLE:
+        fmp_status = fmp_fetcher.check_api_status()
+        if fmp_status["configured"]:
+            if fmp_status["connected"]:
+                console.print(f"[green]✓ FMP API: {fmp_status['message']}[/green]")
+                fmp_enabled = True
+            else:
+                console.print(f"[yellow]⚠ FMP API configured but: {fmp_status['message']}[/yellow]")
+        else:
+            console.print("[dim]ℹ FMP API not configured (earnings surprises disabled)[/dim]")
 
     # Quick connectivity check (unless using cache only)
     if not skip_connectivity_check:
@@ -91,13 +119,49 @@ def run(
             "  3. If you have cached data, it will be used automatically\n"
         )
 
+    # ── Step 1b: fetch FMP data (if enabled - US stocks only) ──────────────────
+    fmp_data_map = {}
+    if fmp_enabled:
+        console.print("[dim]Fetching FMP earnings data…[/dim]")
+        fmp_success = 0
+        for ticker in universe:
+            fmp_data = fmp_fetcher.get_fmp_enhanced_data(ticker, use_cache=use_cache)
+            fmp_data_map[ticker] = fmp_data
+            if fmp_data.get("has_fmp_data"):
+                fmp_success += 1
+        console.print(f"[dim]FMP data: {fmp_success}/{len(universe)} stocks with earnings surprise data[/dim]")
+
+    # ── Step 1c: fetch KLSE data (Malaysian stocks - primary enhancement) ─────
+    klse_data_map = {}
+    klse_enabled = False
+    if KLSE_AVAILABLE:
+        # Check if we have Malaysian stocks
+        klse_tickers = [t for t in universe if t.upper().endswith(".KL")]
+        if klse_tickers:
+            klse_status = klse_fetcher.check_status()
+            if klse_status["connected"]:
+                console.print(f"[green]✓ KLSE Screener: {klse_status['message']}[/green]")
+                klse_enabled = True
+                console.print(f"[dim]Fetching KLSE quarterly data for {len(klse_tickers)} Malaysian stocks…[/dim]")
+                klse_success = 0
+                for ticker in klse_tickers:
+                    klse_data = klse_fetcher.get_klse_enhanced_data(ticker, use_cache=use_cache)
+                    klse_data_map[ticker] = klse_data
+                    if klse_data.get("has_klse_data"):
+                        klse_success += 1
+                console.print(f"[dim]KLSE data: {klse_success}/{len(klse_tickers)} stocks with quarterly/shareholding data[/dim]")
+            else:
+                console.print(f"[yellow]⚠ KLSE Screener: {klse_status['message']}[/yellow]")
+
     # ── Step 2: score each stock ──────────────────────────────────────────────
     console.print("[dim]Scoring technicals and fundamentals…[/dim]")
     fund_scores = {}
     tech_scores = {}
 
     for ticker, data in raw_data.items():
-        fund_scores[ticker] = score_fundamentals(ticker, data["fundamentals"])
+        fmp_data = fmp_data_map.get(ticker) if fmp_enabled else None
+        klse_data = klse_data_map.get(ticker) if klse_enabled else None
+        fund_scores[ticker] = score_fundamentals(ticker, data["fundamentals"], fmp_data, klse_data)
         tech_scores[ticker] = score_technicals(ticker, data["price_df"])
 
     # ── Step 3: rank and classify ─────────────────────────────────────────────
@@ -177,6 +241,12 @@ Examples:
         help="Bypass cache and fetch fresh data from Yahoo Finance",
     )
     parser.add_argument(
+        "--fmp",
+        action="store_true",
+        default=False,
+        help="Enable FMP earnings surprise data (US stocks only, requires FMP_API_KEY)",
+    )
+    parser.add_argument(
         "--clear-cache",
         action="store_true",
         default=False,
@@ -236,6 +306,7 @@ Examples:
         export_html=args.html,
         refresh_universe=args.refresh_universe,
         use_cache=not args.no_cache,
+        use_fmp=args.fmp,
     )
 
 

@@ -680,7 +680,7 @@ def generate_html_report(
                 <div class="scoring-grid">
                     <div class="score-box fundamental">
                         <div class="score-box-title">
-                            <span>💰</span> Fundamental Score (65 points)
+                            <span>💰</span> Fundamental Score (65-76 points)
                         </div>
                         <div class="score-box-subtitle">
                             "Is this a quality business?" — Measures company health, growth & value
@@ -691,7 +691,7 @@ def generate_html_report(
                                 <span class="factor-points">10 pts</span>
                             </li>
                             <li>
-                                <span class="factor-name">🚀 Earnings Growth (NEW)</span>
+                                <span class="factor-name">🚀 Earnings Growth (YoY)</span>
                                 <span class="factor-points">10 pts</span>
                             </li>
                             <li>
@@ -715,10 +715,31 @@ def generate_html_report(
                                 <span class="factor-points">3 pts</span>
                             </li>
                             <li>
-                                <span class="factor-name">📊 Improving Fundamentals (NEW)</span>
+                                <span class="factor-name">📊 Improving Fundamentals</span>
                                 <span class="factor-points">5 pts</span>
                             </li>
                         </ul>
+                        <div style="margin-top: 15px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.1);">
+                            <div style="font-size: 0.85rem; color: var(--blue); margin-bottom: 8px;">📡 KLSE Enhanced (Malaysian stocks):</div>
+                            <ul class="factor-list">
+                                <li>
+                                    <span class="factor-name">🎯 Earnings Momentum (QoQ/YoY)</span>
+                                    <span class="factor-points">+5 pts</span>
+                                </li>
+                                <li>
+                                    <span class="factor-name">📈 Earnings Consistency</span>
+                                    <span class="factor-points">+3 pts</span>
+                                </li>
+                                <li>
+                                    <span class="factor-name">🏦 Institutional Flow (EPF/KWAP)</span>
+                                    <span class="factor-points">+3 pts</span>
+                                </li>
+                            </ul>
+                        </div>
+                        <div style="margin-top: 10px; font-size: 0.8rem; color: var(--text-muted);">
+                            * With KLSE Screener: 76 pts max (Malaysian stocks)<br>
+                            * With FMP API: 70 pts max (US stocks only)
+                        </div>
                     </div>
                     
                     <div class="score-box technical">
@@ -860,6 +881,15 @@ def generate_html_report(
             <div class="highlight-title">🟢 Ready to Buy — Top Picks</div>
 '''
         for r in ready[:5]:
+            # Format earnings surprise for display
+            es_display = f"{r.fund.score_earnings_surprise}/5" if r.fund.has_fmp_data else "N/A"
+            
+            # Format KLSE data
+            klse_qoq = f"{r.fund.latest_qoq:+.1f}%" if r.fund.latest_qoq is not None else "N/A"
+            klse_yoy = f"{r.fund.latest_yoy:+.1f}%" if r.fund.latest_yoy is not None else "N/A"
+            klse_mom = f"{r.fund.score_earnings_momentum}/5" if r.fund.has_klse_data else "N/A"
+            klse_inst = f"{r.fund.score_institutional_flow}/3" if r.fund.has_klse_data else "N/A"
+            
             html += f'''
             <div class="stock-card">
                 <div class="stock-header">
@@ -867,9 +897,10 @@ def generate_html_report(
                     <span class="badge badge-ready">READY TO BUY</span>
                 </div>
                 <div class="stock-scores">
-                    <span>Fund: <strong>{r.fundamental_score}/65</strong></span>
+                    <span>Fund: <strong>{r.fundamental_score}/{r.fund.max_score}</strong></span>
                     <span>Tech: <strong>{r.technical_score}/25</strong></span>
                     <span>Total: <strong>{r.total_score}</strong></span>
+                    {f'<span style="color: #22c55e;">📡 KLSE Enhanced</span>' if r.fund.has_klse_data else ''}
                 </div>
                 <div class="stock-metrics">
                     <div class="metric">
@@ -887,11 +918,35 @@ def generate_html_report(
                     <div class="metric">
                         <div class="metric-label">EPS Growth</div>
                         <div class="metric-value">{_format_return(r.fund.earnings_growth_pct)}</div>
+                    </div>'''
+            
+            # Add KLSE-specific metrics if available
+            if r.fund.has_klse_data:
+                html += f'''
+                    <div class="metric">
+                        <div class="metric-label">QoQ %</div>
+                        <div class="metric-value">{_format_return(r.fund.latest_qoq)}</div>
                     </div>
                     <div class="metric">
-                        <div class="metric-label">RS Ratio</div>
-                        <div class="metric-value">{r.tech.rs_ratio:.2f}x</div>
+                        <div class="metric-label">YoY %</div>
+                        <div class="metric-value">{_format_return(r.fund.latest_yoy)}</div>
                     </div>
+                    <div class="metric">
+                        <div class="metric-label">Momentum</div>
+                        <div class="metric-value">{klse_mom}</div>
+                    </div>
+                    <div class="metric">
+                        <div class="metric-label">Inst. Flow</div>
+                        <div class="metric-value">{klse_inst}</div>
+                    </div>'''
+            else:
+                html += f'''
+                    <div class="metric">
+                        <div class="metric-label">Earn Surprise</div>
+                        <div class="metric-value">{es_display}</div>
+                    </div>'''
+            
+            html += f'''
                     <div class="metric">
                         <div class="metric-label">Week Return</div>
                         <div class="metric-value">{_format_return(r.tech.week_return)}</div>
@@ -910,6 +965,12 @@ def generate_html_report(
             <div class="highlight-title">🟡 Early Re-Rating — Watch for Breakout</div>
 '''
         for r in early[:5]:
+            es_display = f"{r.fund.score_earnings_surprise}/5" if r.fund.has_fmp_data else "N/A"
+            
+            # Format KLSE data
+            klse_mom = f"{r.fund.score_earnings_momentum}/5" if r.fund.has_klse_data else "N/A"
+            klse_inst = f"{r.fund.score_institutional_flow}/3" if r.fund.has_klse_data else "N/A"
+            
             html += f'''
             <div class="stock-card">
                 <div class="stock-header">
@@ -917,9 +978,10 @@ def generate_html_report(
                     <span class="badge badge-early">EARLY RE-RATING</span>
                 </div>
                 <div class="stock-scores">
-                    <span>Fund: <strong>{r.fundamental_score}/65</strong></span>
+                    <span>Fund: <strong>{r.fundamental_score}/{r.fund.max_score}</strong></span>
                     <span>Tech: <strong>{r.technical_score}/25</strong></span>
                     <span>Total: <strong>{r.total_score}</strong></span>
+                    {f'<span style="color: #22c55e;">📡 KLSE Enhanced</span>' if r.fund.has_klse_data else ''}
                 </div>
                 <div class="stock-metrics">
                     <div class="metric">
@@ -933,11 +995,31 @@ def generate_html_report(
                     <div class="metric">
                         <div class="metric-label">EPS Growth</div>
                         <div class="metric-value">{_format_return(r.fund.earnings_growth_pct)}</div>
+                    </div>'''
+            
+            # Add KLSE-specific metrics if available
+            if r.fund.has_klse_data:
+                html += f'''
+                    <div class="metric">
+                        <div class="metric-label">QoQ %</div>
+                        <div class="metric-value">{_format_return(r.fund.latest_qoq)}</div>
                     </div>
                     <div class="metric">
-                        <div class="metric-label">RS Ratio</div>
-                        <div class="metric-value">{r.tech.rs_ratio:.2f}x</div>
+                        <div class="metric-label">YoY %</div>
+                        <div class="metric-value">{_format_return(r.fund.latest_yoy)}</div>
                     </div>
+                    <div class="metric">
+                        <div class="metric-label">Momentum</div>
+                        <div class="metric-value">{klse_mom}</div>
+                    </div>'''
+            else:
+                html += f'''
+                    <div class="metric">
+                        <div class="metric-label">Earn Surprise</div>
+                        <div class="metric-value">{es_display}</div>
+                    </div>'''
+            
+            html += f'''
                     <div class="metric">
                         <div class="metric-label">52Wk Position</div>
                         <div class="metric-value">+{r.tech.pct_from_52wk_low:.0f}% / -{r.tech.pct_from_52wk_high:.0f}%</div>
@@ -953,6 +1035,9 @@ def generate_html_report(
         </section>
 '''
 
+    # Check if any stock has KLSE data
+    has_klse = any(r.fund.has_klse_data for r in results)
+    
     # Full table
     html += '''
         <section class="section">
@@ -967,13 +1052,24 @@ def generate_html_report(
                             <th data-sort="string" title="Stock ticker symbol on Bursa Malaysia">Ticker</th>
                             <th data-sort="string" title="Company name">Name</th>
                             <th data-sort="number" title="Current stock price in Malaysian Ringgit">Price</th>
-                            <th data-sort="number" title="Fundamental Score (max 65 pts)&#10;Measures business quality: earnings, growth, ROE, debt, valuation&#10;Higher = stronger company financials">Fund</th>
+                            <th data-sort="number" title="Fundamental Score (65-76 pts)&#10;Base: 65 pts from yfinance data&#10;With KLSE Screener: 76 pts (+11 pts for Malaysian stocks)&#10;With FMP: 70 pts (+5 pts for US stocks only)">Fund</th>
                             <th data-sort="number" title="Technical Score (max 25 pts)&#10;Measures price momentum: trend, moving averages, volume&#10;Higher = stronger uptrend">Tech</th>
                             <th data-sort="number" title="Total Score = Fundamental + Technical&#10;Higher score = better overall candidate">Total</th>
                             <th data-sort="number" title="Price-to-Earnings Ratio (TTM)&#10;How much you pay for each RM1 of earnings&#10;Lower = cheaper (but compare within same sector)">PE</th>
                             <th data-sort="number" title="Price-to-Book Ratio&#10;Stock price vs company's net assets&#10;Below 1.0 = trading below book value">PB</th>
                             <th data-sort="number" title="Return on Equity (%)&#10;How efficiently the company uses shareholder money&#10;Higher = more profitable (above 15% is good)">ROE</th>
-                            <th data-sort="number" title="Earnings Per Share Growth (YoY %)&#10;How fast profits are growing&#10;Above 25% is excellent (CAN SLIM standard)">EPS Gr</th>
+                            <th data-sort="number" title="Earnings Per Share Growth (YoY %)&#10;How fast profits are growing&#10;Above 25% is excellent (CAN SLIM standard)">EPS Gr</th>'''
+    
+    # Add KLSE columns if available
+    if has_klse:
+        html += '''
+                            <th data-sort="number" title="Quarter-on-Quarter Growth (%)&#10;Latest quarterly earnings vs previous quarter&#10;Data from KLSE Screener">QoQ%</th>
+                            <th data-sort="number" title="Year-on-Year Growth (%)&#10;Latest quarterly earnings vs same quarter last year&#10;Data from KLSE Screener">YoY%</th>
+                            <th data-sort="number" title="Earnings Momentum Score (0-5 pts, KLSE data)&#10;Measures acceleration in quarterly earnings&#10;5 = Strong (QoQ>10% + YoY>20%)&#10;3-4 = Good momentum">Mom</th>
+                            <th data-sort="number" title="Institutional Flow Score (0-3 pts, KLSE data)&#10;Tracks EPF/KWAP/PNB buying/selling&#10;3 = Net institutional buying&#10;0 = Net selling or no activity">Inst</th>'''
+    
+    html += '''
+                            <th data-sort="number" title="Earnings Surprise Score (0-5 pts, FMP data)&#10;How often company beats analyst estimates&#10;US stocks only&#10;— = No FMP data available">ES</th>
                             <th data-sort="number" title="Net Gearing Ratio&#10;(Total Debt - Cash) / Equity&#10;Negative = net cash (good), Above 1.0 = high debt (risky)">Gearing</th>
                             <th data-sort="number" title="Dividend Yield (%)&#10;Annual dividend as % of stock price&#10;Higher = more income (but growth stocks may not pay)">Div%</th>
                             <th data-sort="number" title="Relative Strength Ratio&#10;Stock performance vs KLCI index (6 months)&#10;Above 1.0 = outperforming market">RS</th>
@@ -998,18 +1094,41 @@ def generate_html_report(
         # Format 52-week position
         wk52_str = f"+{r.tech.pct_from_52wk_low:.0f}%/-{r.tech.pct_from_52wk_high:.0f}%"
         
+        # Format earnings surprise
+        if r.fund.has_fmp_data:
+            es_str = f"{r.fund.score_earnings_surprise}/5"
+        else:
+            es_str = '<span class="na">—</span>'
+        
+        # Format KLSE data
+        qoq_str = _format_return(r.fund.latest_qoq) if r.fund.has_klse_data else '<span class="na">—</span>'
+        yoy_str = _format_return(r.fund.latest_yoy) if r.fund.has_klse_data else '<span class="na">—</span>'
+        mom_str = f"{r.fund.score_earnings_momentum}/5" if r.fund.has_klse_data else '<span class="na">—</span>'
+        inst_str = f"{r.fund.score_institutional_flow}/3" if r.fund.has_klse_data else '<span class="na">—</span>'
+        
         html += f'''
                         <tr>
                             <td class="ticker">{r.ticker}</td>
                             <td class="name">{(r.long_name or "")[:25]}</td>
                             <td>{r.tech.price:.3f}</td>
-                            <td class="score">{r.fundamental_score}</td>
+                            <td class="score">{r.fundamental_score}/{r.fund.max_score}</td>
                             <td class="score">{r.technical_score}</td>
                             <td class="score">{r.total_score}</td>
                             <td>{_format_value(r.fund.pe_ttm, "", 1)}</td>
                             <td>{_format_value(r.fund.pb, "", 2)}</td>
                             <td>{_format_value(r.fund.roe_pct, "", 1)}</td>
-                            <td>{_format_return(r.fund.earnings_growth_pct)}</td>
+                            <td>{_format_return(r.fund.earnings_growth_pct)}</td>'''
+        
+        # Add KLSE columns if available
+        if has_klse:
+            html += f'''
+                            <td>{qoq_str}</td>
+                            <td>{yoy_str}</td>
+                            <td>{mom_str}</td>
+                            <td>{inst_str}</td>'''
+        
+        html += f'''
+                            <td>{es_str}</td>
                             <td>{_format_value(r.fund.net_gearing, "", 2)}</td>
                             <td>{_format_value(r.fund.div_yield_pct, "", 1)}</td>
                             <td>{r.tech.rs_ratio:.2f}x</td>
@@ -1028,7 +1147,8 @@ def generate_html_report(
         
         <footer>
             <p>Generated by Be Richer — Bursa Malaysia Stock Screener</p>
-            <p>Data source: Yahoo Finance (15-min delayed) • Core EPS normalization requires Level 2 LLM analysis</p>
+            <p>Data sources: Yahoo Finance (15-min delayed) • KLSE Screener (quarterly data, shareholding) • Financial Modeling Prep (earnings surprises, US only)</p>
+            <p style="font-size: 0.75rem; margin-top: 8px;">Core EPS normalization requires Level 2 LLM analysis</p>
         </footer>
     </div>
     

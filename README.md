@@ -7,14 +7,14 @@ Automated stock screener for Bursa Malaysia (and Southeast Asia) equities using 
 ## What It Does
 
 **Level 1** is the automated screening layer. It fetches price history and fundamental data via
-`yfinance`, scores every stock against an industry-aligned 90-point framework, and classifies each into one of four groups:
+`yfinance` (enhanced by **KLSE Screener** for Malaysian stocks), scores every stock against an industry-aligned 90-101 point framework, and classifies each into one of four groups:
 
 | Group | Criteria | Meaning |
 |-------|----------|---------|
-| 🟢 READY TO BUY | Fund ≥ 52/65 AND Tech ≥ 18/25 | Strong fundamentals + confirmed uptrend |
-| 🟡 EARLY RE-RATING | Fund ≥ 52/65 AND Tech 12-17/25 | Strong fundamentals, momentum building |
-| 🔵 WATCHLIST | Fund 40-51/65 | Decent fundamentals, monitor for upgrades |
-| 🔴 REJECT | Fund < 40/65 or red flags | Weak fundamentals or warning signs |
+| 🟢 READY TO BUY | Fund ≥ 52 AND Tech ≥ 18/25 | Strong fundamentals + confirmed uptrend |
+| 🟡 EARLY RE-RATING | Fund ≥ 52 AND Tech 12-17/25 | Strong fundamentals, momentum building |
+| 🔵 WATCHLIST | Fund 40-51 | Decent fundamentals, monitor for upgrades |
+| 🔴 REJECT | Fund < 40 or red flags | Weak fundamentals or warning signs |
 
 Results are printed as a rich terminal table and exported to both CSV and HTML reports.
 
@@ -24,7 +24,7 @@ Results are printed as a rich terminal table and exported to both CSV and HTML r
 
 The scoring system is aligned with proven methodologies: **CAN SLIM**, **Piotroski F-Score**, and **Minervini SEPA**.
 
-### Fundamental Score — 65 pts
+### Fundamental Score — 65-76 pts (depending on data sources)
 
 | Factor | Max | Description |
 |--------|-----|-------------|
@@ -36,6 +36,20 @@ The scoring system is aligned with proven methodologies: **CAN SLIM**, **Piotros
 | Operating Cash Flow | 5 | OCF yield |
 | Dividends | 3 | Reduced weight (growth stocks don't pay) |
 | **Improving Fundamentals** | 5 | Piotroski-style momentum checks |
+
+#### KLSE Screener Enhanced (Malaysian stocks only)
+
+| Factor | Max | Description |
+|--------|-----|-------------|
+| **Earnings Momentum** | 5 | QoQ/YoY growth from quarterly data |
+| **Earnings Consistency** | 3 | Consecutive growth quarters |
+| **Institutional Flow** | 3 | EPF/KWAP/PNB buying signals |
+
+#### FMP Enhanced (US stocks only)
+
+| Factor | Max | Description |
+|--------|-----|-------------|
+| **Earnings Surprises** | 5 | Beat/miss streak (US stocks only) |
 
 ### Technical Score — 25 pts
 
@@ -141,7 +155,54 @@ be-richer --cache-stats      # Show cache statistics
 be-richer --clear-cache      # Clear all cached data
 be-richer --no-cache         # Bypass cache (not recommended)
 be-richer --refresh-universe # Force refresh KLCI constituents
+
+# FMP (US stocks only - disabled by default)
+be-richer --tickers AAPL MSFT --fmp --html   # Enable FMP for US stocks
 ```
+
+---
+
+## Data Sources
+
+### Primary: Yahoo Finance + yfinance
+- Price history, moving averages, RSI, MACD
+- Basic fundamentals (PE, PB, ROE, etc.)
+- 15-minute delayed data
+
+### Enhanced: KLSE Screener (Malaysian stocks)
+
+> **🟢 KLSE Screener is automatically enabled for Malaysian stocks (.KL tickers)**
+
+KLSE Screener provides enhanced data specifically for Malaysian stocks:
+
+| Data Type | Description |
+|-----------|-------------|
+| **Quarterly Financials** | QoQ and YoY growth rates from actual quarterly reports |
+| **Shareholding Changes** | Tracks EPF, KWAP, PNB, and other institutional buying/selling |
+| **More Accurate Fundamentals** | PE, ROE, EPS often more reliable than yfinance |
+
+**Benefits for Malaysian Stock Scoring (+11 pts maximum):**
+- **Earnings Momentum** (+5 pts): Strong QoQ/YoY growth = higher score
+- **Earnings Consistency** (+3 pts): Multiple consecutive growth quarters = stability signal
+- **Institutional Flow** (+3 pts): EPF/KWAP/PNB buying = smart money following
+
+**Package:** `klse-screener-py` (automatically installed with requirements.txt)
+
+### Optional: Financial Modeling Prep (US stocks only)
+
+> **⚠️ Note: FMP is disabled by default and only works for US stocks.**  
+> FMP has no coverage for Malaysian stocks (.KL). Use `--fmp` flag only when screening US stocks.
+
+**Setup (only needed for US stocks):**
+1. Register for free API key at [financialmodelingprep.com](https://financialmodelingprep.com/)
+2. Create `.env` file in project root: `FMP_API_KEY=your_key_here`
+3. For GitHub Actions: Add `FMP_API_KEY` to repository secrets
+4. Run with `--fmp` flag: `be-richer --tickers AAPL MSFT --fmp`
+
+**Limitations:**
+- FMP free tier: 250 API calls/day, limit=5 records per request
+- **Malaysian stocks (.KL) have NO FMP coverage**
+- US stock support is experimental
 
 ---
 
@@ -151,23 +212,14 @@ The `--html` flag generates a beautiful, self-contained HTML report with:
 
 - 📊 **Summary cards** showing classification counts
 - 📋 **Interactive sortable table** with all metrics
+- 📡 **KLSE Enhanced data**: QoQ%, YoY%, Momentum, Institutional Flow columns
 - 📚 **Strategy explainer** — collapsible section explaining the scoring methodology
 - 🌙 **Dark theme** — easy on the eyes
 - 📱 **Mobile responsive** — works on any device
-- 🔍 **New metrics displayed**: EPS Growth, RS Ratio, 52-Week Position
 
 ---
 
-## Data Source & Limitations
-
-| Item | Detail |
-|------|--------|
-| Price data | `yfinance` — 15-min delayed |
-| Fundamentals | Yahoo Finance scraped data — may lag filings by a few days |
-| Forward PE / analyst estimates | Sparse for small-cap Bursa names |
-| OCF for banks | yfinance OCF is unreliable for Financial Services; scored on net income proxy |
-
-### ⚠️ Yahoo Finance Rate Limiting
+## ⚠️ Yahoo Finance Rate Limiting
 
 Yahoo Finance aggressively rate-limits free API access. The screener includes caching (4-24 hours) to minimize API calls.
 
@@ -189,16 +241,20 @@ be-richer/
 │       ├── screener.py       # CLI entry point
 │       ├── universe.py       # Stock universe (KLCI, mid-cap, SEA)
 │       ├── data_fetcher.py   # yfinance wrapper + caching
+│       ├── klse_fetcher.py   # KLSE Screener API client (Malaysian stocks)
+│       ├── fmp_fetcher.py    # FMP API client (US stocks only)
 │       ├── technicals.py     # 25-point technical scorer
-│       ├── fundamentals.py   # 65-point fundamental scorer
+│       ├── fundamentals.py   # 65-76 point fundamental scorer
 │       ├── ranker.py         # Classification + sorting
 │       ├── reporter.py       # Rich terminal output + CSV
 │       ├── html_reporter.py  # HTML report generator
-│       └── config/           # Sector PE benchmarks
+│       ├── config/           # Sector PE benchmarks
+│       └── cache/            # yfinance, KLSE, FMP cache (auto-created)
 ├── .github/
 │   └── workflows/
 │       └── klci-scan.yml     # GitHub Actions workflow
 ├── results/                  # CSV/HTML exports (auto-created)
+├── .env                      # FMP API key (not committed)
 ├── pyproject.toml            # Project configuration
 ├── requirements.txt          # Dependencies
 ├── run.sh                    # Shell shortcuts
@@ -217,8 +273,10 @@ results/bursa_screen_20261125_0930.html
 ```
 
 **CSV columns**: `ticker, name, price, fundamental, technical, catalyst, total,
-pe_ttm, pb, roe, net_gearing, div_yield, earnings_growth, rs_ratio, adv_30d, 
-week_return, month_return, rsi, vol_ratio, 52wk_position, tech_status, classification`
+pe_ttm, pb, roe, net_gearing, div_yield, earnings_growth, earnings_surprise, 
+klse_qoq, klse_yoy, klse_momentum, klse_consistency, klse_institutional,
+rs_ratio, adv_30d, week_return, month_return, rsi, vol_ratio, 52wk_position, 
+tech_status, classification, has_fmp, has_klse`
 
 ---
 
@@ -245,6 +303,8 @@ MID_CAP = [
 |-------|--------|-------------|
 | Level 1 | ✅ Done | Automated screener — technicals + fundamentals (90-point system) |
 | Level 1.5 | ✅ Done | HTML reports, GitHub Actions, industry-aligned scoring |
+| Level 1.6 | ✅ Done | KLSE Screener integration (+11 pts for Malaysian stocks) |
+| Level 1.7 | 🔸 Partial | FMP integration (disabled by default - US stocks only) |
 | Level 2 | 🔜 Planned | LLM deep analysis — catalyst scoring, Core EPS normalization |
 | Level 3 | 🔜 Planned | Weekly scheduler, Telegram/email alerts, portfolio tracker |
 

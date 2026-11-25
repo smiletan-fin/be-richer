@@ -2,17 +2,19 @@
 Ranker — combines technical + fundamental scores, applies
 classification rules, and returns a sorted candidate list.
 
-Enhanced 90-point system (65 Fundamental + 25 Technical):
+Enhanced scoring system:
+- Fundamental: 65 pts (base) or 70 pts (with FMP earnings data)
+- Technical: 25 pts
+- Total: 90-95 pts depending on data sources
 
 Classification thresholds (industry-aligned):
-    READY TO BUY     : fundamental ≥ 52/65, technical ≥ 18/25
-    EARLY RE-RATING  : fundamental ≥ 52/65, technical 12–17/25
-    WATCHLIST        : fundamental 40–51/65
-    REJECT           : fundamental < 40/65 or hard reject flags
+    READY TO BUY     : fundamental ≥ 52, technical ≥ 18/25
+    EARLY RE-RATING  : fundamental ≥ 52, technical 12–17/25
+    WATCHLIST        : fundamental 40–51
+    REJECT           : fundamental < 40 or hard reject flags
 
 Note: catalyst score (20 pts) is NOT computed in Level 1 — it requires
-LLM analysis in Level 2.  We placeholder it as None so the output
-table is already structured for Level 2 enrichment.
+LLM analysis in Level 2.
 """
 
 from __future__ import annotations
@@ -23,11 +25,12 @@ from .fundamentals import FundamentalScore
 from .technicals import TechnicalScore
 
 
-# ── Classification thresholds (updated for 90-point system) ───────────────────
-FUND_THRESHOLD_READY = 52      # ~80% of 65 points
-FUND_THRESHOLD_WATCHLIST = 40  # ~62% of 65 points
-TECH_THRESHOLD_UPTREND = 18    # ~72% of 25 points
-TECH_THRESHOLD_EARLY = 12      # ~48% of 25 points
+# ── Classification thresholds ─────────────────────────────────────────────────
+# These are absolute thresholds (not percentages) for consistency
+FUND_THRESHOLD_READY = 52      # Strong fundamentals
+FUND_THRESHOLD_WATCHLIST = 40  # Decent fundamentals
+TECH_THRESHOLD_UPTREND = 18    # Confirmed uptrend
+TECH_THRESHOLD_EARLY = 12      # Early momentum
 
 # ── hard reject flags ─────────────────────────────────────────────────────────
 HARD_REJECT_KEYWORDS = [
@@ -51,6 +54,11 @@ class StockResult:
     @property
     def fundamental_score(self) -> int:
         return self.fund.total
+
+    @property
+    def fundamental_max(self) -> int:
+        """Max fundamental score (70 with FMP, 65 without)."""
+        return self.fund.max_score
 
     @property
     def technical_score(self) -> int:
@@ -102,11 +110,29 @@ class StockResult:
 
     def as_row(self) -> dict:
         """Flat dict for tabular display / CSV export."""
+        # Show earnings surprise info if available
+        earnings_beats = ""
+        if self.fund.has_fmp_data and self.fund.earnings_beats is not None:
+            earnings_beats = f" ({self.fund.earnings_beats}/4 beats)"
+        
+        # Format KLSE quarterly data
+        klse_qoq = f"{self.fund.latest_qoq:+.1f}%" if self.fund.latest_qoq is not None else "—"
+        klse_yoy = f"{self.fund.latest_yoy:+.1f}%" if self.fund.latest_yoy is not None else "—"
+        
+        # KLSE enhanced scores summary
+        klse_scores = ""
+        if self.fund.has_klse_data:
+            klse_scores = (
+                f"Mom={self.fund.score_earnings_momentum}/5 "
+                f"Con={self.fund.score_earnings_consistency}/3 "
+                f"Inst={self.fund.score_institutional_flow}/3"
+            )
+        
         return {
             "ticker":          self.ticker,
             "name":            (self.long_name or "")[:28],
             "price":           f"RM {self.tech.price:.3f}" if self.tech.price else "N/A",
-            "fundamental":     f"{self.fundamental_score}/65",
+            "fundamental":     f"{self.fundamental_score}/{self.fundamental_max}",
             "technical":       f"{self.technical_score}/25",
             "catalyst":        f"{self.catalyst_score}/20" if self.catalyst_score is not None else "—",
             "total":           f"{self.total_score}",
@@ -116,6 +142,14 @@ class StockResult:
             "net_gearing":     f"{self.fund.net_gearing:.2f}" if self.fund.net_gearing is not None else "N/A",
             "div_yield":       f"{self.fund.div_yield_pct:.1f}%" if self.fund.div_yield_pct else "N/A",
             "earnings_growth": f"{self.fund.earnings_growth_pct:+.1f}%" if self.fund.earnings_growth_pct else "N/A",
+            "earnings_surprise": f"{self.fund.score_earnings_surprise}/5{earnings_beats}" if self.fund.has_fmp_data else "—",
+            # KLSE enhanced data columns
+            "klse_qoq":        klse_qoq,
+            "klse_yoy":        klse_yoy,
+            "klse_momentum":   f"{self.fund.score_earnings_momentum}/5" if self.fund.has_klse_data else "—",
+            "klse_consistency": f"{self.fund.score_earnings_consistency}/3" if self.fund.has_klse_data else "—",
+            "klse_institutional": f"{self.fund.score_institutional_flow}/3" if self.fund.has_klse_data else "—",
+            "klse_scores":     klse_scores if klse_scores else "—",
             "rs_ratio":        f"{self.tech.rs_ratio:.2f}x" if self.tech.rs_ratio else "N/A",
             "adv_30d":         f"{self.tech.adv_30d:,.0f}",
             "week_return":     f"{self.tech.week_return:+.1f}%",
@@ -125,6 +159,8 @@ class StockResult:
             "52wk_position":   f"{self.tech.pct_from_52wk_low:+.0f}% / -{self.tech.pct_from_52wk_high:.0f}%",
             "tech_status":     self.tech.status,
             "classification":  self.classification,
+            "has_fmp":         "✓" if self.fund.has_fmp_data else "",
+            "has_klse":        "✓" if self.fund.has_klse_data else "",
         }
 
 
