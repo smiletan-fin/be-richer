@@ -249,11 +249,13 @@ def batch_fetch_prices(
                 return results
 
     if len(uncached_tickers) == 1:
-        # Single ticker — df is not grouped
+        # Single ticker — df may still be grouped by ticker
         ticker = uncached_tickers[0]
         if df is not None and not df.empty and len(df) >= MIN_PRICE_ROWS:
             if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
+                # With group_by="ticker", Level 0 = ticker, Level 1 = column names
+                # We need Level 1 (column names like 'Close', 'High', etc.)
+                df.columns = df.columns.get_level_values(1)
             results[ticker] = df
             if use_cache:
                 _save_price_cache(ticker, period, df)
@@ -369,6 +371,14 @@ def fetch_fundamentals(ticker: str, use_cache: bool = True) -> dict[str, Any]:
         # 52-week data for relative strength
         "fiftyTwoWeekHigh":     _get("fiftyTwoWeekHigh"),
         "fiftyTwoWeekLow":      _get("fiftyTwoWeekLow"),
+        # NEW: Analyst target prices and recommendations
+        "targetMeanPrice":      _get("targetMeanPrice"),
+        "targetHighPrice":      _get("targetHighPrice"),
+        "targetLowPrice":       _get("targetLowPrice"),
+        "targetMedianPrice":    _get("targetMedianPrice"),
+        "numberOfAnalystOpinions": _get("numberOfAnalystOpinions"),
+        "recommendationKey":    info.get("recommendationKey"),  # 'buy', 'hold', 'sell'
+        "recommendationMean":   _get("recommendationMean"),     # 1.0 = Strong Buy, 5.0 = Strong Sell
     }
 
     # Cache successful fetch (only if we got actual data)

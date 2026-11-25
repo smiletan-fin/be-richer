@@ -7,7 +7,7 @@ Automated stock screener for Bursa Malaysia (and Southeast Asia) equities using 
 ## What It Does
 
 **Level 1** is the automated screening layer. It fetches price history and fundamental data via
-`yfinance` (enhanced by **KLSE Screener** for Malaysian stocks), scores every stock against an industry-aligned 90-101 point framework, and classifies each into one of four groups:
+`yfinance` (enhanced by **KLSE Screener** for Malaysian stocks), scores every stock against an industry-aligned **90-109 point framework**, and classifies each into one of four groups:
 
 | Group | Criteria | Meaning |
 |-------|----------|---------|
@@ -24,7 +24,7 @@ Results are printed as a rich terminal table and exported to both CSV and HTML r
 
 The scoring system is aligned with proven methodologies: **CAN SLIM**, **Piotroski F-Score**, and **Minervini SEPA**.
 
-### Fundamental Score — 65-76 pts (depending on data sources)
+### Fundamental Score — 65-84 pts (depending on data sources)
 
 | Factor | Max | Description |
 |--------|-----|-------------|
@@ -37,6 +37,12 @@ The scoring system is aligned with proven methodologies: **CAN SLIM**, **Piotros
 | Dividends | 3 | Reduced weight (growth stocks don't pay) |
 | **Improving Fundamentals** | 5 | Piotroski-style momentum checks |
 
+#### Analyst Target Prices (most stocks)
+
+| Factor | Max | Description |
+|--------|-----|-------------|
+| **Analyst Target** | 5 | Upside potential to mean target price + consensus rating |
+
 #### KLSE Screener Enhanced (Malaysian stocks only)
 
 | Factor | Max | Description |
@@ -44,6 +50,7 @@ The scoring system is aligned with proven methodologies: **CAN SLIM**, **Piotros
 | **Earnings Momentum** | 5 | QoQ/YoY growth from quarterly data |
 | **Earnings Consistency** | 3 | Consecutive growth quarters |
 | **Institutional Flow** | 3 | EPF/KWAP/PNB buying signals |
+| **Insider Trading** | 3 | Director buying/selling signals |
 
 #### FMP Enhanced (US stocks only)
 
@@ -98,6 +105,11 @@ be-richer --tickers 1155.KL 5347.KL 4715.KL
 # Generate HTML report (recommended)
 be-richer --tier klci --html
 
+# Sector filter (NEW!)
+be-richer --sector banking --html
+be-richer --sector technology --html
+be-richer --list-sectors           # Show available sectors
+
 # Or using Python module
 python -m bursa_screener
 python -m bursa_screener --tier klci --html
@@ -121,7 +133,16 @@ chmod +x run.sh
 
 ## GitHub Actions (Automated Runs)
 
-Run the screener directly from GitHub without setting up locally:
+Run the screener directly from GitHub without setting up locally.
+
+### Available Workflows
+
+| Workflow | Trigger | Description |
+|----------|---------|-------------|
+| **KLCI Stock Screener** | Manual | Scan KLCI/broad/full universe |
+| **Sector Stock Screener** | Manual + Saturday 8am MYT | Scan by sector (banking, technology, etc.) |
+
+### KLCI Screener Workflow
 
 1. Go to **Actions** tab in your repository
 2. Select **"KLCI Stock Screener"** workflow
@@ -129,7 +150,29 @@ Run the screener directly from GitHub without setting up locally:
 4. Choose tier (klci/broad/full) and options
 5. Download HTML report from **Artifacts** when complete
 
-The workflow uses dependency caching to minimize run time (~30 seconds for KLCI tier).
+### Sector Screener Workflow (NEW!)
+
+Scan individual sectors or all sectors in parallel:
+
+1. Go to **Actions** tab → **"Sector Stock Screener"**
+2. Click **"Run workflow"**
+3. Select sector from dropdown:
+   - `banking`, `technology`, `plantation`, `property`
+   - `healthcare`, `consumer`, `industrials`, `energy`, `reit`
+   - `construction`, `utilities`, `telecommunications`, `transportation`
+   - `all-sectors` — runs ALL sectors in parallel (9 jobs)
+4. Download reports from **Artifacts**
+
+**Scheduled Runs:**
+- Every **Saturday at 8:00 AM Malaysia Time** — all sectors scanned automatically
+- Reports available for 30 days in Artifacts
+
+**Example Use Cases:**
+- Quick morning check: Run `banking` sector only (~15 seconds)
+- Weekend analysis: Run `all-sectors` to scan entire market (~2-3 minutes)
+- Sector rotation: Compare `technology` vs `consumer` performance
+
+The workflows use dependency caching to minimize run time (~30 seconds per sector).
 
 ---
 
@@ -143,6 +186,12 @@ be-richer --tier full    # All tiers including SEA regional
 
 # Custom tickers
 be-richer --tickers 1155.KL 5347.KL 1023.KL
+
+# Sector filter (NEW!)
+be-richer --sector banking           # Banking stocks only
+be-richer --sector technology        # Tech stocks
+be-richer --sector plantation        # Plantation stocks
+be-richer --list-sectors             # Show all available sectors
 
 # Output options
 be-richer --html             # Generate interactive HTML report
@@ -167,6 +216,7 @@ be-richer --tickers AAPL MSFT --fmp --html   # Enable FMP for US stocks
 ### Primary: Yahoo Finance + yfinance
 - Price history, moving averages, RSI, MACD
 - Basic fundamentals (PE, PB, ROE, etc.)
+- Analyst target prices and recommendations
 - 15-minute delayed data
 
 ### Enhanced: KLSE Screener (Malaysian stocks)
@@ -179,14 +229,32 @@ KLSE Screener provides enhanced data specifically for Malaysian stocks:
 |-----------|-------------|
 | **Quarterly Financials** | QoQ and YoY growth rates from actual quarterly reports |
 | **Shareholding Changes** | Tracks EPF, KWAP, PNB, and other institutional buying/selling |
+| **Insider Dealings** | Director buying/selling transactions |
 | **More Accurate Fundamentals** | PE, ROE, EPS often more reliable than yfinance |
 
-**Benefits for Malaysian Stock Scoring (+11 pts maximum):**
+**Benefits for Malaysian Stock Scoring (+14 pts maximum):**
 - **Earnings Momentum** (+5 pts): Strong QoQ/YoY growth = higher score
 - **Earnings Consistency** (+3 pts): Multiple consecutive growth quarters = stability signal
 - **Institutional Flow** (+3 pts): EPF/KWAP/PNB buying = smart money following
+- **Insider Trading** (+3 pts): Directors buying = bullish signal; selling = warning
 
 **Package:** `klse-screener-py` (automatically installed with requirements.txt)
+
+### Analyst Target Prices (via yfinance)
+
+> **🟢 Analyst data is automatically included for stocks with analyst coverage**
+
+Analyst consensus data from yfinance includes:
+- **Target Mean/Median Price**: Average analyst price target
+- **Target High/Low**: Range of analyst targets
+- **Number of Analysts**: Coverage breadth
+- **Recommendation**: Strong Buy / Buy / Hold / Sell
+
+**Benefits (+5 pts maximum):**
+- **20%+ upside to target**: 4-5 pts
+- **10-20% upside**: 3 pts
+- **5-10% upside**: 2 pts
+- **Below target**: 0-1 pts (warning flag if significantly overvalued)
 
 ### Optional: Financial Modeling Prep (US stocks only)
 
@@ -212,7 +280,8 @@ The `--html` flag generates a beautiful, self-contained HTML report with:
 
 - 📊 **Summary cards** showing classification counts
 - 📋 **Interactive sortable table** with all metrics
-- 📡 **KLSE Enhanced data**: QoQ%, YoY%, Momentum, Institutional Flow columns
+- 📈 **Analyst targets**: Target price, upside %, recommendation
+- 📡 **KLSE Enhanced data**: QoQ%, YoY%, Momentum, Institutional Flow, Insider Trading
 - 📚 **Strategy explainer** — collapsible section explaining the scoring methodology
 - 🌙 **Dark theme** — easy on the eyes
 - 📱 **Mobile responsive** — works on any device
@@ -239,12 +308,12 @@ be-richer/
 │       ├── __init__.py       # Package entry point
 │       ├── __main__.py       # Allow python -m bursa_screener
 │       ├── screener.py       # CLI entry point
-│       ├── universe.py       # Stock universe (KLCI, mid-cap, SEA)
+│       ├── universe.py       # Stock universe (KLCI, mid-cap, SEA, sector filter)
 │       ├── data_fetcher.py   # yfinance wrapper + caching
 │       ├── klse_fetcher.py   # KLSE Screener API client (Malaysian stocks)
 │       ├── fmp_fetcher.py    # FMP API client (US stocks only)
 │       ├── technicals.py     # 25-point technical scorer
-│       ├── fundamentals.py   # 65-76 point fundamental scorer
+│       ├── fundamentals.py   # 65-84 point fundamental scorer
 │       ├── ranker.py         # Classification + sorting
 │       ├── reporter.py       # Rich terminal output + CSV
 │       ├── html_reporter.py  # HTML report generator
@@ -252,7 +321,8 @@ be-richer/
 │       └── cache/            # yfinance, KLSE, FMP cache (auto-created)
 ├── .github/
 │   └── workflows/
-│       └── klci-scan.yml     # GitHub Actions workflow
+│       ├── klci-scan.yml     # GitHub Actions: KLCI/broad/full screener
+│       └── sector-scan.yml   # GitHub Actions: Sector-based screener
 ├── results/                  # CSV/HTML exports (auto-created)
 ├── .env                      # FMP API key (not committed)
 ├── pyproject.toml            # Project configuration
@@ -274,9 +344,10 @@ results/bursa_screen_20261125_0930.html
 
 **CSV columns**: `ticker, name, price, fundamental, technical, catalyst, total,
 pe_ttm, pb, roe, net_gearing, div_yield, earnings_growth, earnings_surprise, 
-klse_qoq, klse_yoy, klse_momentum, klse_consistency, klse_institutional,
+analyst_target, analyst_upside, analyst_score, analyst_rec,
+klse_qoq, klse_yoy, klse_momentum, klse_consistency, klse_institutional, klse_insider,
 rs_ratio, adv_30d, week_return, month_return, rsi, vol_ratio, 52wk_position, 
-tech_status, classification, has_fmp, has_klse`
+tech_status, classification, has_fmp, has_klse, has_analyst`
 
 ---
 
@@ -303,8 +374,9 @@ MID_CAP = [
 |-------|--------|-------------|
 | Level 1 | ✅ Done | Automated screener — technicals + fundamentals (90-point system) |
 | Level 1.5 | ✅ Done | HTML reports, GitHub Actions, industry-aligned scoring |
-| Level 1.6 | ✅ Done | KLSE Screener integration (+11 pts for Malaysian stocks) |
-| Level 1.7 | 🔸 Partial | FMP integration (disabled by default - US stocks only) |
+| Level 1.6 | ✅ Done | KLSE Screener integration (+14 pts for Malaysian stocks) |
+| Level 1.7 | ✅ Done | Analyst target prices (+5 pts), insider trading, sector filter |
+| Level 1.8 | 🔸 Partial | FMP integration (disabled by default - US stocks only) |
 | Level 2 | 🔜 Planned | LLM deep analysis — catalyst scoring, Core EPS normalization |
 | Level 3 | 🔜 Planned | Weekly scheduler, Telegram/email alerts, portfolio tracker |
 

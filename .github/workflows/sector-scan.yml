@@ -1,0 +1,434 @@
+name: Sector Stock Screener
+
+on:
+  workflow_dispatch:
+    inputs:
+      sector:
+        description: 'Which sector to scan'
+        required: true
+        type: choice
+        options:
+          - all-sectors
+          - banking
+          - technology
+          - plantation
+          - property
+          - healthcare
+          - consumer
+          - industrials
+          - construction
+          - energy
+          - utilities
+          - reit
+          - telecommunications
+          - transportation
+      show_rejected:
+        description: 'Include rejected stocks'
+        required: false
+        default: false
+        type: boolean
+  
+  # Schedule: Run every Saturday at 8am Malaysia time (UTC+8 = 00:00 UTC)
+  schedule:
+    - cron: '0 0 * * 6'
+
+jobs:
+  # Single sector job (when specific sector selected)
+  scan-single:
+    name: Scan ${{ inputs.sector }}
+    runs-on: ubuntu-latest
+    if: inputs.sector != 'all-sectors'
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Cache virtual environment
+        uses: actions/cache@v4
+        id: cache-venv
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+          restore-keys: |
+            venv-${{ runner.os }}-py3.11-
+
+      - name: Install dependencies
+        if: steps.cache-venv.outputs.cache-hit != 'true'
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Activate venv
+        run: echo "${{ github.workspace }}/.venv/bin" >> $GITHUB_PATH
+
+      - name: Run Sector Screener
+        run: |
+          mkdir -p results
+          REJECTED_FLAG=""
+          if [ "${{ inputs.show_rejected }}" = "true" ]; then
+            REJECTED_FLAG="--show-rejected"
+          fi
+          
+          python -m bursa_screener --sector ${{ inputs.sector }} --html $REJECTED_FLAG
+
+      - name: Upload Report
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.sector }}-report-${{ github.run_number }}
+          path: |
+            results/*.html
+            results/*.csv
+          retention-days: 30
+
+      - name: Summary
+        run: |
+          echo "## 📊 Sector Screening: ${{ inputs.sector }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Sector:** ${{ inputs.sector }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Run:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📁 Reports" >> $GITHUB_STEP_SUMMARY
+          for f in results/*; do
+            if [ -f "$f" ]; then
+              fname=$(basename "$f")
+              echo "- \`$fname\`" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📥 Download from **Artifacts** section below" >> $GITHUB_STEP_SUMMARY
+
+  # All sectors scan (parallel jobs)
+  scan-banking:
+    name: 🏦 Banking
+    runs-on: ubuntu-latest
+    if: inputs.sector == 'all-sectors' || github.event_name == 'schedule'
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Cache venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+      - name: Install
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
+          pip install -e .
+      - name: Run
+        run: |
+          source .venv/bin/activate
+          mkdir -p results
+          python -m bursa_screener --sector banking --html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: banking-report
+          path: results/*
+          retention-days: 30
+
+  scan-technology:
+    name: 💻 Technology
+    runs-on: ubuntu-latest
+    if: inputs.sector == 'all-sectors' || github.event_name == 'schedule'
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Cache venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+      - name: Install
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
+          pip install -e .
+      - name: Run
+        run: |
+          source .venv/bin/activate
+          mkdir -p results
+          python -m bursa_screener --sector technology --html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: technology-report
+          path: results/*
+          retention-days: 30
+
+  scan-plantation:
+    name: 🌴 Plantation
+    runs-on: ubuntu-latest
+    if: inputs.sector == 'all-sectors' || github.event_name == 'schedule'
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Cache venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+      - name: Install
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
+          pip install -e .
+      - name: Run
+        run: |
+          source .venv/bin/activate
+          mkdir -p results
+          python -m bursa_screener --sector plantation --html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: plantation-report
+          path: results/*
+          retention-days: 30
+
+  scan-property:
+    name: 🏠 Property
+    runs-on: ubuntu-latest
+    if: inputs.sector == 'all-sectors' || github.event_name == 'schedule'
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Cache venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+      - name: Install
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
+          pip install -e .
+      - name: Run
+        run: |
+          source .venv/bin/activate
+          mkdir -p results
+          python -m bursa_screener --sector property --html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: property-report
+          path: results/*
+          retention-days: 30
+
+  scan-healthcare:
+    name: 🏥 Healthcare
+    runs-on: ubuntu-latest
+    if: inputs.sector == 'all-sectors' || github.event_name == 'schedule'
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Cache venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+      - name: Install
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
+          pip install -e .
+      - name: Run
+        run: |
+          source .venv/bin/activate
+          mkdir -p results
+          python -m bursa_screener --sector healthcare --html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: healthcare-report
+          path: results/*
+          retention-days: 30
+
+  scan-consumer:
+    name: 🛒 Consumer
+    runs-on: ubuntu-latest
+    if: inputs.sector == 'all-sectors' || github.event_name == 'schedule'
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Cache venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+      - name: Install
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
+          pip install -e .
+      - name: Run
+        run: |
+          source .venv/bin/activate
+          mkdir -p results
+          python -m bursa_screener --sector consumer --html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: consumer-report
+          path: results/*
+          retention-days: 30
+
+  scan-industrials:
+    name: 🏭 Industrials
+    runs-on: ubuntu-latest
+    if: inputs.sector == 'all-sectors' || github.event_name == 'schedule'
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Cache venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+      - name: Install
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
+          pip install -e .
+      - name: Run
+        run: |
+          source .venv/bin/activate
+          mkdir -p results
+          python -m bursa_screener --sector industrials --html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: industrials-report
+          path: results/*
+          retention-days: 30
+
+  scan-energy:
+    name: ⛽ Energy
+    runs-on: ubuntu-latest
+    if: inputs.sector == 'all-sectors' || github.event_name == 'schedule'
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Cache venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+      - name: Install
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
+          pip install -e .
+      - name: Run
+        run: |
+          source .venv/bin/activate
+          mkdir -p results
+          python -m bursa_screener --sector energy --html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: energy-report
+          path: results/*
+          retention-days: 30
+
+  scan-reit:
+    name: 🏢 REITs
+    runs-on: ubuntu-latest
+    if: inputs.sector == 'all-sectors' || github.event_name == 'schedule'
+    
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Cache venv
+        uses: actions/cache@v4
+        with:
+          path: .venv
+          key: venv-${{ runner.os }}-py3.11-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+      - name: Install
+        run: |
+          python -m venv .venv
+          source .venv/bin/activate
+          pip install -r requirements.txt
+          pip install -e .
+      - name: Run
+        run: |
+          source .venv/bin/activate
+          mkdir -p results
+          python -m bursa_screener --sector reit --html
+      - uses: actions/upload-artifact@v4
+        with:
+          name: reit-report
+          path: results/*
+          retention-days: 30
+
+  # Summary job that runs after all sectors
+  summary:
+    name: 📊 Summary
+    runs-on: ubuntu-latest
+    needs: [scan-banking, scan-technology, scan-plantation, scan-property, scan-healthcare, scan-consumer, scan-industrials, scan-energy, scan-reit]
+    if: always() && (inputs.sector == 'all-sectors' || github.event_name == 'schedule')
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-reports
+
+      - name: Create Summary
+        run: |
+          echo "# 📊 All Sectors Screening Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Sector | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------|" >> $GITHUB_STEP_SUMMARY
+          
+          for dir in all-reports/*/; do
+            sector=$(basename "$dir" | sed 's/-report//')
+            if [ -d "$dir" ] && [ "$(ls -A $dir)" ]; then
+              echo "| $sector | ✅ Complete |" >> $GITHUB_STEP_SUMMARY
+            else
+              echo "| $sector | ❌ Failed |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "📥 Download individual sector reports from **Artifacts** section" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload combined reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-sectors-reports-${{ github.run_number }}
+          path: all-reports/
+          retention-days: 30

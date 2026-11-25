@@ -51,6 +51,7 @@ console = Console()
 def run(
     tier: str = "klci",
     tickers: list[str] | None = None,
+    sector: str | None = None,
     show_rejected: bool = False,
     export: bool = True,
     export_html: bool = False,
@@ -64,12 +65,17 @@ def run(
     
     Returns dict with paths: {"csv": path, "html": path}
     """
-    universe = tickers if tickers else get_universe(tier, force_refresh=refresh_universe)
+    universe = tickers if tickers else get_universe(tier, force_refresh=refresh_universe, sector=sector)
+    
+    # Build tier description
+    tier_desc = tier if not tickers else "custom"
+    if sector:
+        tier_desc = f"{tier_desc} ({sector})"
 
     cache_status = "[green]cache enabled[/green]" if use_cache else "[yellow]cache disabled[/yellow]"
     console.print(
         f"\n[bold blue]🔍 Bursa Malaysia Level 1 Screener[/bold blue]  "
-        f"({len(universe)} tickers, tier={tier if not tickers else 'custom'}, {cache_status})\n"
+        f"({len(universe)} tickers, tier={tier_desc}, {cache_status})\n"
     )
 
     # Check FMP status
@@ -191,6 +197,9 @@ Examples:
   be-richer --tier broad
   be-richer --tickers 1155.KL 5347.KL 4715.KL
   be-richer --tier broad --show-rejected --no-export
+  be-richer --sector banking  # filter by sector
+  be-richer --tier klci --sector technology
+  be-richer --list-sectors  # show available sectors
   be-richer --refresh-universe
   be-richer --no-cache  # bypass cache (always fetch fresh)
   be-richer --clear-cache  # clear all cached data
@@ -209,6 +218,18 @@ Examples:
         nargs="+",
         metavar="TICKER",
         help="Override universe with specific tickers (e.g. 1155.KL 5347.KL)",
+    )
+    parser.add_argument(
+        "--sector",
+        type=str,
+        metavar="SECTOR",
+        help="Filter by sector (e.g. banking, technology, plantation, property)",
+    )
+    parser.add_argument(
+        "--list-sectors",
+        action="store_true",
+        default=False,
+        help="List available sectors and exit",
     )
     parser.add_argument(
         "--show-rejected",
@@ -267,6 +288,19 @@ Examples:
 
     args = parser.parse_args()
     
+    # List available sectors
+    if args.list_sectors:
+        from .universe import list_available_sectors
+        sectors = list_available_sectors()
+        if sectors:
+            console.print("\n[bold]Available Sectors[/bold]")
+            for s in sectors:
+                aliases = ", ".join(s.get("aliases", []))
+                console.print(f"  [cyan]{s['name']}[/cyan]: {aliases}")
+        else:
+            console.print("[yellow]KLSE Screener not available - cannot list sectors[/yellow]")
+        return
+    
     # Check connectivity only
     if args.check:
         console.print("\n[bold]Checking Yahoo Finance connectivity…[/bold]")
@@ -301,6 +335,7 @@ Examples:
     run(
         tier=args.tier,
         tickers=args.tickers,
+        sector=args.sector,
         show_rejected=args.show_rejected,
         export=not args.no_export,
         export_html=args.html,

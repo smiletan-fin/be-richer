@@ -1,5 +1,5 @@
 """
-Fundamental scoring engine — Enhanced 76-point framework.
+Fundamental scoring engine — Enhanced 79-point framework.
 
 Aligned with industry standards (Piotroski F-Score, Quality Factor Investing, CAN SLIM):
 
@@ -15,18 +15,27 @@ Scoring map:
     I. Earnings Momentum      5 pts  (KLSE quarterly QoQ/YoY data)
     J. Earnings Consistency   3 pts  (KLSE consecutive growth quarters)
     K. Institutional Flow     3 pts  (KLSE shareholding changes)
+    L. Insider Trading        3 pts  (Director buying/selling signals)
     ──────────────────────────────
-    Total                    76 pts
+    Total                    79 pts (Malaysian stocks with KLSE data)
+                             65 pts (base without KLSE)
 
 Data sources:
 - Primary: yfinance (free, 15-min delayed)
-- Enhanced: KLSE Screener (Malaysian stocks - more accurate, quarterly data)
+- Enhanced: KLSE Screener (Malaysian stocks - more accurate PE/ROE, quarterly data)
 - Optional: Financial Modeling Prep (US stocks only - earnings surprises)
+
+KLSE Screener provides more accurate data for Malaysian stocks:
+- PE ratio: More accurate than yfinance (which often shows stale data)
+- ROE: Properly calculated from Malaysian financial statements
+- EPS: In sen, properly normalized
+- Quarterly data: QoQ/YoY growth from actual quarterly reports
 
 Industry alignment:
 - Earnings Growth: CAN SLIM requires >25% EPS growth
 - Earnings Momentum: KLSE quarterly data for acceleration signals
 - Institutional Flow: EPF/KWAP/PNB buying = smart money
+- Insider Trading: Directors buying their own stock = bullish signal
 - ROIC consideration: Research shows ROIC beats ROE 17:1
 - Improving Fundamentals: Piotroski F-Score elements
 """
@@ -206,11 +215,13 @@ class FundamentalScore:
     score_dividends:        int = 0   # max  3
     score_improving:        int = 0   # max  5 (Piotroski-style)
     score_earnings_surprise: int = 0  # max  5 (FMP data - US stocks only)
+    score_analyst_target:   int = 0   # max  5 (Analyst target prices)
     
     # KLSE Screener enhanced scores (Malaysian stocks)
     score_earnings_momentum:    int = 0  # max 5 (KLSE quarterly data)
     score_earnings_consistency: int = 0  # max 3 (KLSE consecutive growth)
     score_institutional_flow:   int = 0  # max 3 (KLSE shareholding)
+    score_insider_trading:      int = 0  # max 3 (KLSE director trades)
 
     # display values
     pe_ttm:       float | None = None
@@ -229,11 +240,29 @@ class FundamentalScore:
     # Data source flags
     has_fmp_data: bool = False    # FMP earnings surprise (US stocks)
     has_klse_data: bool = False   # KLSE Screener data (Malaysian stocks)
+    has_analyst_data: bool = False  # Analyst target prices available
     earnings_beats: int | None = None  # Number of recent beats (out of 4)
     
     # KLSE quarterly data
     latest_qoq: float | None = None  # Latest QoQ growth %
     latest_yoy: float | None = None  # Latest YoY growth %
+    
+    # KLSE enhanced fundamentals (more accurate than yfinance)
+    klse_pe: float | None = None
+    klse_roe: float | None = None
+    klse_pb: float | None = None
+    klse_div_yield: float | None = None
+    klse_sector: str | None = None
+    
+    # Analyst target prices
+    analyst_target_mean: float | None = None
+    analyst_target_upside: float | None = None  # % upside to mean target
+    analyst_recommendation: str | None = None   # 'buy', 'hold', 'sell'
+    analyst_count: int | None = None
+    
+    # Raw KLSE data for display (shareholding transactions)
+    _raw_shareholding: list[dict] | None = None
+    _raw_quarterly: list[dict] | None = None
 
     # flags
     flags: list[str] = field(default_factory=list)
@@ -246,17 +275,19 @@ class FundamentalScore:
             + self.score_roe + self.score_financial_health 
             + self.score_valuation + self.score_cashflow 
             + self.score_dividends + self.score_improving
-            + self.score_earnings_surprise
+            + self.score_earnings_surprise + self.score_analyst_target
             + self.score_earnings_momentum + self.score_earnings_consistency
-            + self.score_institutional_flow
+            + self.score_institutional_flow + self.score_insider_trading
         )
 
     @property
     def max_score(self) -> int:
         """Maximum possible score based on data sources available."""
         base = 65  # Base score without enhancements
+        if self.has_analyst_data:
+            base += 5   # +5 analyst target prices
         if self.has_klse_data:
-            base += 11  # +5 momentum, +3 consistency, +3 institutional
+            base += 14  # +5 momentum, +3 consistency, +3 institutional, +3 insider
         if self.has_fmp_data:
             base += 5   # +5 earnings surprise (rarely both)
         return base
@@ -273,11 +304,14 @@ class FundamentalScore:
             f"Div={self.score_dividends}/3  "
             f"Imp={self.score_improving}/5"
         )
+        if self.has_analyst_data:
+            base += f"  Tgt={self.score_analyst_target}/5"
         if self.has_klse_data:
             base += (
                 f"  Mom={self.score_earnings_momentum}/5"
                 f"  Con={self.score_earnings_consistency}/3"
                 f"  Inst={self.score_institutional_flow}/3"
+                f"  Dir={self.score_insider_trading}/3"
             )
         if self.has_fmp_data:
             base += f"  ES={self.score_earnings_surprise}/5"
@@ -610,10 +644,68 @@ def score_fundamentals(ticker: str, info: dict[str, Any], fmp_data: dict[str, An
         else:
             result.earnings_beats = 0
 
-    # ── J, K, L. KLSE Screener Enhanced Scores (Malaysian stocks only) ────────
-    # Score based on quarterly data and institutional activity
+    # ── J. Analyst Target Prices (max 5) ──────────────────────────────────────
+    # Score based on analyst consensus and upside potential
+    target_mean = _f("targetMeanPrice")
+    target_high = _f("targetHighPrice")
+    target_low = _f("targetLowPrice")
+    analyst_count = _f("numberOfAnalystOpinions")
+    recommend_key = info.get("recommendationKey")
+    recommend_mean = _f("recommendationMean")
+    current_price = _f("price")
+    
+    if target_mean is not None and current_price is not None and current_price > 0:
+        result.has_analyst_data = True
+        result.analyst_target_mean = target_mean
+        result.analyst_recommendation = recommend_key
+        result.analyst_count = int(analyst_count) if analyst_count else None
+        
+        # Calculate upside to mean target
+        upside_pct = ((target_mean - current_price) / current_price) * 100
+        result.analyst_target_upside = round(upside_pct, 1)
+        
+        # Score based on upside potential and analyst consensus
+        # Upside thresholds: 20%+ = excellent, 10%+ = good, 5%+ = fair
+        if upside_pct >= 20:
+            at_score = 4
+        elif upside_pct >= 10:
+            at_score = 3
+        elif upside_pct >= 5:
+            at_score = 2
+        elif upside_pct >= 0:
+            at_score = 1
+        else:
+            at_score = 0
+            if upside_pct < -10:
+                result.flags.append(f"⚠ Stock trading above analyst target ({upside_pct:+.1f}%)")
+        
+        # Bonus for strong buy consensus (1.0 = Strong Buy, 2.0 = Buy, 3.0 = Hold)
+        if recommend_mean is not None and recommend_mean <= 2.0 and at_score >= 2:
+            at_score = min(at_score + 1, 5)
+            if recommend_key and recommend_key.lower() in ('buy', 'strong_buy', 'strongbuy'):
+                result.flags.append(f"📈 Analyst: {recommend_key.upper()} (target: RM {target_mean:.2f}, +{upside_pct:.0f}%)")
+        elif recommend_key:
+            result.flags.append(f"📊 Analyst target: RM {target_mean:.2f} ({upside_pct:+.0f}% from current)")
+        
+        result.score_analyst_target = at_score
+
+    # ── K, L, M, N. KLSE Screener Enhanced Scores (Malaysian stocks only) ─────
+    # Score based on quarterly data, institutional activity, and insider trading
     if klse_data and klse_data.get("has_klse_data"):
         result.has_klse_data = True
+        
+        # Store KLSE enhanced fundamentals (more accurate than yfinance)
+        result.klse_pe = klse_data.get("klse_pe")
+        result.klse_roe = klse_data.get("klse_roe")
+        result.klse_pb = klse_data.get("klse_pb")
+        result.klse_div_yield = klse_data.get("klse_div_yield")
+        result.klse_sector = klse_data.get("klse_sector")
+        
+        # Flag if KLSE data differs significantly from yfinance
+        if result.klse_pe is not None and result.pe_ttm is not None:
+            pe_diff = abs(result.klse_pe - result.pe_ttm)
+            if pe_diff > 2:
+                result.flags.append(f"📊 KLSE PE: {result.klse_pe:.1f}x (yfinance: {result.pe_ttm:.1f}x)")
         
         # J. Earnings Momentum (max 5) - from quarterly QoQ/YoY data
         result.score_earnings_momentum = klse_data.get("earnings_momentum_score", 0)
@@ -633,11 +725,23 @@ def score_fundamentals(ticker: str, info: dict[str, Any], fmp_data: dict[str, An
         if institutional_flag:
             result.flags.append(institutional_flag)
         
+        # M. Insider Trading (max 3) - director buying/selling
+        result.score_insider_trading = klse_data.get("insider_trading_score", 0)
+        insider_flag = klse_data.get("insider_trading_flag")
+        if insider_flag:
+            result.flags.append(insider_flag)
+        
         # Store quarterly data for display
         quarterly = klse_data.get("quarterly")
         if quarterly and len(quarterly) > 0:
             latest = quarterly[0]
             result.latest_qoq = latest.get("qoq")
             result.latest_yoy = latest.get("yoy")
+            result._raw_quarterly = quarterly  # Store for detailed display
+        
+        # Store raw shareholding data for institutional activity display
+        shareholding = klse_data.get("shareholding")
+        if shareholding:
+            result._raw_shareholding = shareholding
 
     return result

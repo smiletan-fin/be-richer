@@ -125,8 +125,22 @@ class StockResult:
             klse_scores = (
                 f"Mom={self.fund.score_earnings_momentum}/5 "
                 f"Con={self.fund.score_earnings_consistency}/3 "
-                f"Inst={self.fund.score_institutional_flow}/3"
+                f"Inst={self.fund.score_institutional_flow}/3 "
+                f"Dir={self.fund.score_insider_trading}/3"
             )
+        
+        # Use KLSE PE/ROE if available (more accurate)
+        pe_display = self.fund.klse_pe if self.fund.klse_pe is not None else self.fund.pe_ttm
+        roe_display = self.fund.klse_roe if self.fund.klse_roe is not None else self.fund.roe_pct
+        pb_display = self.fund.klse_pb if self.fund.klse_pb is not None else self.fund.pb
+        
+        # Analyst target display
+        analyst_target = "—"
+        analyst_upside = "—"
+        if self.fund.has_analyst_data and self.fund.analyst_target_mean:
+            analyst_target = f"RM {self.fund.analyst_target_mean:.2f}"
+            if self.fund.analyst_target_upside is not None:
+                analyst_upside = f"{self.fund.analyst_target_upside:+.1f}%"
         
         return {
             "ticker":          self.ticker,
@@ -136,20 +150,30 @@ class StockResult:
             "technical":       f"{self.technical_score}/25",
             "catalyst":        f"{self.catalyst_score}/20" if self.catalyst_score is not None else "—",
             "total":           f"{self.total_score}",
-            "pe_ttm":          f"{self.fund.pe_ttm:.1f}x"   if self.fund.pe_ttm   else "N/A",
-            "pb":              f"{self.fund.pb:.2f}x"        if self.fund.pb       else "N/A",
-            "roe":             f"{self.fund.roe_pct:.1f}%"   if self.fund.roe_pct  else "N/A",
+            "pe_ttm":          f"{pe_display:.1f}x" if pe_display else "N/A",
+            "pb":              f"{pb_display:.2f}x" if pb_display else "N/A",
+            "roe":             f"{roe_display:.1f}%" if roe_display else "N/A",
             "net_gearing":     f"{self.fund.net_gearing:.2f}" if self.fund.net_gearing is not None else "N/A",
             "div_yield":       f"{self.fund.div_yield_pct:.1f}%" if self.fund.div_yield_pct else "N/A",
             "earnings_growth": f"{self.fund.earnings_growth_pct:+.1f}%" if self.fund.earnings_growth_pct else "N/A",
             "earnings_surprise": f"{self.fund.score_earnings_surprise}/5{earnings_beats}" if self.fund.has_fmp_data else "—",
+            # Analyst target data
+            "analyst_target":  analyst_target,
+            "analyst_upside":  analyst_upside,
+            "analyst_score":   f"{self.fund.score_analyst_target}/5" if self.fund.has_analyst_data else "—",
+            "analyst_rec":     self.fund.analyst_recommendation.upper() if self.fund.analyst_recommendation else "—",
             # KLSE enhanced data columns
             "klse_qoq":        klse_qoq,
             "klse_yoy":        klse_yoy,
             "klse_momentum":   f"{self.fund.score_earnings_momentum}/5" if self.fund.has_klse_data else "—",
             "klse_consistency": f"{self.fund.score_earnings_consistency}/3" if self.fund.has_klse_data else "—",
             "klse_institutional": f"{self.fund.score_institutional_flow}/3" if self.fund.has_klse_data else "—",
+            "klse_insider":    f"{self.fund.score_insider_trading}/3" if self.fund.has_klse_data else "—",
             "klse_scores":     klse_scores if klse_scores else "—",
+            # KLSE enhanced fundamentals
+            "klse_pe":         f"{self.fund.klse_pe:.1f}x" if self.fund.klse_pe else "—",
+            "klse_roe":        f"{self.fund.klse_roe:.1f}%" if self.fund.klse_roe else "—",
+            "klse_sector":     self.fund.klse_sector if self.fund.klse_sector else "—",
             "rs_ratio":        f"{self.tech.rs_ratio:.2f}x" if self.tech.rs_ratio else "N/A",
             "adv_30d":         f"{self.tech.adv_30d:,.0f}",
             "week_return":     f"{self.tech.week_return:+.1f}%",
@@ -161,6 +185,7 @@ class StockResult:
             "classification":  self.classification,
             "has_fmp":         "✓" if self.fund.has_fmp_data else "",
             "has_klse":        "✓" if self.fund.has_klse_data else "",
+            "has_analyst":     "✓" if self.fund.has_analyst_data else "",
         }
 
 

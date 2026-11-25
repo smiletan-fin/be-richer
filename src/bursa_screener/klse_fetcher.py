@@ -5,6 +5,8 @@ Provides enhanced Malaysian stock data beyond yfinance:
 - More accurate fundamentals (PE, ROE, PB, EPS)
 - Quarterly financial results with YoY/QoQ growth
 - Shareholding changes (institutional buying signals)
+- Insider/director trading activity
+- Analyst consensus (target prices, recommendations)
 - Trade summary (bid/ask depth)
 
 Data source: klsescreener.com via klse-screener-py package
@@ -16,6 +18,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -35,6 +38,51 @@ try:
     KLSE_AVAILABLE = True
 except ImportError:
     KLSE_AVAILABLE = False
+
+# ── Sector Mapping ────────────────────────────────────────────────────────────
+# Map readable sector names to KLSE sector codes
+SECTOR_CODE_MAP = {
+    "consumer": "0001I",
+    "consumer products": "0001I",
+    "industrial": "0002I",
+    "industrials": "0002I",
+    "construction": "0003I",
+    "technology": "0005I",
+    "tech": "0005I",
+    "financial": "0010I",
+    "finance": "0010I",
+    "banking": "0010I",
+    "property": "0020I",
+    "properties": "0020I",
+    "plantation": "0025I",
+    "plantations": "0025I",
+    "reit": "0050I",
+    "reits": "0050I",
+    "energy": "0061I",
+    "healthcare": "0062I",
+    "telco": "0063I",
+    "telecommunications": "0063I",
+    "utilities": "0064I",
+    "transportation": "0065I",
+    "transport": "0065I",
+}
+
+# Reverse map for display
+SECTOR_DISPLAY_NAMES = {
+    "0001I": "Consumer Products",
+    "0002I": "Industrials",
+    "0003I": "Construction",
+    "0005I": "Technology",
+    "0010I": "Financial Services",
+    "0020I": "Property",
+    "0025I": "Plantation",
+    "0050I": "REITs",
+    "0061I": "Energy",
+    "0062I": "Healthcare",
+    "0063I": "Telecommunications",
+    "0064I": "Utilities",
+    "0065I": "Transportation",
+}
 
 
 def is_available() -> bool:
@@ -262,6 +310,258 @@ def fetch_trade_summary(ticker: str, use_cache: bool = True) -> dict | None:
         return None
 
 
+def fetch_insider_dealings(ticker: str, use_cache: bool = True) -> list[dict] | None:
+    """
+    Fetch insider/director dealings from shareholding changes.
+    
+    Filters shareholding changes for director/insider transactions
+    (not institutional like EPF/KWAP).
+    
+    Returns list of transactions:
+        [
+            {
+                "date": "24 Nov 2026",
+                "transaction_type": "Acquired",
+                "shares": "100,000",
+                "holder": "TAN SRI DATO' MEGAT ...",
+                "is_director": True,
+            },
+            ...
+        ]
+    """
+    if not KLSE_AVAILABLE:
+        return None
+    
+    code = _convert_ticker(ticker)
+    
+    if use_cache:
+        cached = _load_cache("insider", ticker)
+        if cached:
+            return cached
+    
+    _rate_limit()
+    
+    try:
+        # Get all shareholding changes
+        all_changes = klse.get_klse_shareholding_changes_raw(code)
+        if not all_changes:
+            return None
+        
+        # Filter for insider/director transactions (exclude institutions)
+        INSTITUTIONS = [
+            "EPF", "KWAP", "PNB", "AMANAH", "PERSARAAN", "TABUNG", 
+            "LEMBAGA", "TRUSTEES", "NOMINEES", "CUSTODIAN", "SECURITIES",
+            "INVESTMENT", "FUND", "CAPITAL", "ASSET"
+        ]
+        
+        insider_deals = []
+        for txn in all_changes:
+            holder = txn.get("holder", "").upper()
+            
+            # Skip if it looks like an institution
+            is_institution = any(inst in holder for inst in INSTITUTIONS)
+            if is_institution:
+                continue
+            
+            # Likely a director/insider if it contains a person's name
+            # (titles like TAN SRI, DATO', DATUK, etc.)
+            is_likely_person = any(title in holder for title in [
+                "TAN SRI", "DATO", "DATUK", "TUNKU", "TENGKU", "DR.", "DR ",
+                "HAJI", "HAJAH", "ENCIK", "PUAN", "MR.", "MRS.", "MS."
+            ]) or (len(holder.split()) >= 2 and not any(inst in holder for inst in ["SDN", "BHD", "LTD", "INC", "CORP"]))
+            
+            if is_likely_person:
+                insider_deals.append({
+                    **txn,
+                    "is_director": True,
+                })
+        
+        if insider_deals and use_cache:
+            _save_cache("insider", ticker, insider_deals)
+        
+        return insider_deals if insider_deals else None
+    except Exception:
+        return None
+
+
+def fetch_enhanced_fundamentals(ticker: str, use_cache: bool = True) -> dict | None:
+    """
+    Fetch enhanced fundamentals from KLSE Screener.
+    
+    This provides more accurate PE, ROE, EPS than yfinance for Malaysian stocks.
+    
+    Returns:
+        {
+            "name": "MAYBANK",
+            "sector": "Banking",
+            "pe_ratio": 11.65,     # Numeric, not string
+            "eps": 87.24,          # Sen
+            "roe": 11.97,          # Percentage
+            "pb_ratio": 1.39,
+            "dividend_yield": 6.20,  # Percentage
+            "market_cap": "123.4B",
+            "nta": 7.2903,
+            "dps": 63.00,          # Sen
+            "psr": 2.01,           # Price-to-Sales
+            "52_week_low": 9.78,
+            "52_week_high": 12.42,
+        }
+    """
+    if not KLSE_AVAILABLE:
+        return None
+    
+    code = _convert_ticker(ticker)
+    
+    if use_cache:
+        cached = _load_cache("enhanced_fund", ticker)
+        if cached:
+            return cached
+    
+    _rate_limit()
+    
+    try:
+        data = klse.get_klse_enhanced_fundamentals(code)
+        if not data:
+            return None
+        
+        # Parse and clean the data
+        result = {
+            "name": data.get("name"),
+            "sector": data.get("sector"),
+            "pe_ratio": _parse_number(data.get("pe_ratio")),
+            "eps": _parse_number(data.get("eps")),
+            "roe": _parse_number(data.get("roe")),
+            "pb_ratio": _parse_number(data.get("pb_ratio")),
+            "dividend_yield": _parse_percentage(data.get("dividend_yield")),
+            "market_cap": data.get("market_cap"),
+            "nta": _parse_number(data.get("nta")),
+            "dps": _parse_number(data.get("dps")),
+            "psr": _parse_number(data.get("psr")),
+        }
+        
+        # Parse 52-week range
+        range_str = data.get("fifty_two_week_range", "")
+        if range_str and " - " in range_str:
+            parts = range_str.split(" - ")
+            result["52_week_low"] = _parse_number(parts[0])
+            result["52_week_high"] = _parse_number(parts[1])
+        
+        if result and use_cache:
+            _save_cache("enhanced_fund", ticker, result)
+        
+        return result
+    except Exception:
+        return None
+
+
+def _parse_number(val: str | float | None) -> float | None:
+    """Parse a number from string or return float."""
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    try:
+        # Remove commas and parse
+        cleaned = str(val).replace(",", "").strip()
+        return float(cleaned)
+    except (ValueError, TypeError):
+        return None
+
+
+def _parse_percentage(val: str | float | None) -> float | None:
+    """Parse a percentage value (removes % sign)."""
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    try:
+        cleaned = str(val).replace("%", "").replace(",", "").strip()
+        return float(cleaned)
+    except (ValueError, TypeError):
+        return None
+
+
+# ── Sector Functions ──────────────────────────────────────────────────────────
+
+def get_sector_tickers(sector: str, use_cache: bool = True) -> list[str]:
+    """
+    Get all tickers for a given sector.
+    
+    Args:
+        sector: Sector name (e.g., "banking", "technology", "plantation")
+                Case-insensitive, supports aliases.
+    
+    Returns:
+        List of tickers in yfinance format (e.g., ["1155.KL", "1023.KL"])
+    """
+    if not KLSE_AVAILABLE:
+        return []
+    
+    sector_lower = sector.lower().strip()
+    sector_code = SECTOR_CODE_MAP.get(sector_lower)
+    
+    if not sector_code:
+        # Try partial match
+        for key, code in SECTOR_CODE_MAP.items():
+            if sector_lower in key or key in sector_lower:
+                sector_code = code
+                break
+    
+    if not sector_code:
+        return []
+    
+    # Check cache
+    cache_key = f"sector_{sector_code}"
+    if use_cache:
+        cached = _load_cache(cache_key, "all")
+        if cached:
+            return cached
+    
+    _rate_limit()
+    
+    try:
+        all_sectors = klse.get_klse_all_sector_stocks()
+        if not all_sectors or sector_code not in all_sectors:
+            return []
+        
+        stocks = all_sectors[sector_code]
+        tickers = [s.get("symbol") for s in stocks if s.get("symbol")]
+        
+        if tickers and use_cache:
+            _save_cache(cache_key, "all", tickers)
+        
+        return tickers
+    except Exception:
+        return []
+
+
+def get_available_sectors() -> list[dict]:
+    """
+    Get list of available sectors with their codes and display names.
+    
+    Returns:
+        [
+            {"code": "0010I", "name": "Financial Services", "aliases": ["banking", "finance"]},
+            ...
+        ]
+    """
+    sectors = []
+    seen_codes = set()
+    
+    for alias, code in SECTOR_CODE_MAP.items():
+        if code not in seen_codes:
+            seen_codes.add(code)
+            display_name = SECTOR_DISPLAY_NAMES.get(code, alias.title())
+            aliases = [k for k, v in SECTOR_CODE_MAP.items() if v == code]
+            sectors.append({
+                "code": code,
+                "name": display_name,
+                "aliases": aliases,
+            })
+    
+    return sectors
+
+
 # ── Scoring Functions ─────────────────────────────────────────────────────────
 
 def calculate_earnings_consistency_score(quarterly: list[dict] | None) -> tuple[int, str | None]:
@@ -408,6 +708,52 @@ def calculate_institutional_flow_score(shareholding: list[dict] | None) -> tuple
     return 0, None
 
 
+def calculate_insider_trading_score(insider_deals: list[dict] | None) -> tuple[int, str | None]:
+    """
+    Calculate insider trading score from director/insider dealings.
+    
+    Directors buying their own stock is typically a bullish signal.
+    
+    Scoring (max 3 pts):
+        - 3 pts: Multiple director acquisitions, no disposals
+        - 2 pts: Net director buying
+        - 1 pt:  Mixed activity
+        - 0 pts: Net director selling
+        - -1 pt: Heavy director selling (penalty)
+    
+    Returns:
+        (score: -1 to 3, flag: str or None)
+    """
+    if not insider_deals or len(insider_deals) == 0:
+        return 0, None
+    
+    acquisitions = 0
+    disposals = 0
+    
+    for txn in insider_deals[:10]:  # Last 10 transactions
+        txn_type = txn.get("transaction_type", "").lower()
+        
+        if "acquired" in txn_type or "bought" in txn_type:
+            acquisitions += 1
+        elif "disposed" in txn_type or "sold" in txn_type:
+            disposals += 1
+    
+    net_flow = acquisitions - disposals
+    
+    if acquisitions >= 2 and disposals == 0:
+        return 3, f"👔 Directors buying ({acquisitions} transactions)"
+    elif net_flow >= 2:
+        return 2, f"Directors net buying"
+    elif net_flow >= 1:
+        return 1, None
+    elif net_flow <= -3:
+        return -1, f"⚠ Heavy director selling ({disposals} disposals)"
+    elif net_flow < 0:
+        return 0, f"⚠ Director selling ({disposals} disposals)"
+    
+    return 0, None
+
+
 def get_klse_enhanced_data(ticker: str, use_cache: bool = True) -> dict[str, Any]:
     """
     Get KLSE Screener data formatted for integration with existing scoring.
@@ -415,9 +761,11 @@ def get_klse_enhanced_data(ticker: str, use_cache: bool = True) -> dict[str, Any
     Returns a dict with enhanced Malaysian stock data:
         {
             "has_klse_data": bool,
-            "fundamentals": {...},  # More accurate than yfinance
-            "quarterly": [...],     # Quarterly results
-            "shareholding": [...],  # Shareholding changes
+            "fundamentals": {...},      # More accurate than yfinance
+            "enhanced_fund": {...},     # Parsed numeric fundamentals
+            "quarterly": [...],         # Quarterly results
+            "shareholding": [...],      # Shareholding changes
+            "insider_deals": [...],     # Director/insider trades
             
             # Pre-calculated scores
             "earnings_momentum_score": 0-5,
@@ -426,14 +774,26 @@ def get_klse_enhanced_data(ticker: str, use_cache: bool = True) -> dict[str, Any
             "earnings_consistency_flag": str or None,
             "institutional_flow_score": 0-3,
             "institutional_flow_flag": str or None,
+            "insider_trading_score": -1 to 3,
+            "insider_trading_flag": str or None,
+            
+            # Enhanced fundamentals (more accurate than yfinance)
+            "klse_pe": float or None,
+            "klse_roe": float or None,
+            "klse_eps": float or None,
+            "klse_pb": float or None,
+            "klse_div_yield": float or None,
+            "klse_sector": str or None,
         }
     """
     result = {
         "has_klse_data": False,
         "ticker": ticker,
         "fundamentals": None,
+        "enhanced_fund": None,
         "quarterly": None,
         "shareholding": None,
+        "insider_deals": None,
         # Scores
         "earnings_momentum_score": 0,
         "earnings_momentum_flag": None,
@@ -441,6 +801,17 @@ def get_klse_enhanced_data(ticker: str, use_cache: bool = True) -> dict[str, Any
         "earnings_consistency_flag": None,
         "institutional_flow_score": 0,
         "institutional_flow_flag": None,
+        "insider_trading_score": 0,
+        "insider_trading_flag": None,
+        # Enhanced fundamentals
+        "klse_pe": None,
+        "klse_roe": None,
+        "klse_eps": None,
+        "klse_pb": None,
+        "klse_div_yield": None,
+        "klse_sector": None,
+        "klse_52wk_low": None,
+        "klse_52wk_high": None,
     }
     
     if not KLSE_AVAILABLE:
@@ -452,17 +823,40 @@ def get_klse_enhanced_data(ticker: str, use_cache: bool = True) -> dict[str, Any
     
     # Fetch all data
     fundamentals = fetch_fundamentals(ticker, use_cache)
+    enhanced_fund = fetch_enhanced_fundamentals(ticker, use_cache)
     quarterly = fetch_quarterly_financials(ticker, use_cache)
     shareholding = fetch_shareholding_changes(ticker, use_cache)
+    insider_deals = fetch_insider_dealings(ticker, use_cache)
     
     # Store raw data
     result["fundamentals"] = fundamentals
+    result["enhanced_fund"] = enhanced_fund
     result["quarterly"] = quarterly
     result["shareholding"] = shareholding
+    result["insider_deals"] = insider_deals
     
     # Mark as having data if we got fundamentals
-    if fundamentals:
+    if fundamentals or enhanced_fund:
         result["has_klse_data"] = True
+    
+    # Extract enhanced fundamentals (more accurate than yfinance)
+    if enhanced_fund:
+        result["klse_pe"] = enhanced_fund.get("pe_ratio")
+        result["klse_roe"] = enhanced_fund.get("roe")
+        result["klse_eps"] = enhanced_fund.get("eps")
+        result["klse_pb"] = enhanced_fund.get("pb_ratio")
+        result["klse_div_yield"] = enhanced_fund.get("dividend_yield")
+        result["klse_sector"] = enhanced_fund.get("sector")
+        result["klse_52wk_low"] = enhanced_fund.get("52_week_low")
+        result["klse_52wk_high"] = enhanced_fund.get("52_week_high")
+    elif fundamentals:
+        # Fallback to basic fundamentals
+        result["klse_pe"] = _parse_number(fundamentals.get("pe_ratio"))
+        result["klse_roe"] = _parse_number(fundamentals.get("roe"))
+        result["klse_eps"] = _parse_number(fundamentals.get("eps"))
+        result["klse_pb"] = _parse_number(fundamentals.get("pb_ratio"))
+        result["klse_div_yield"] = _parse_percentage(fundamentals.get("dividend_yield"))
+        result["klse_sector"] = fundamentals.get("sector")
     
     # Calculate scores
     if quarterly:
@@ -478,6 +872,11 @@ def get_klse_enhanced_data(ticker: str, use_cache: bool = True) -> dict[str, Any
         inst_score, inst_flag = calculate_institutional_flow_score(shareholding)
         result["institutional_flow_score"] = inst_score
         result["institutional_flow_flag"] = inst_flag
+    
+    if insider_deals:
+        insider_score, insider_flag = calculate_insider_trading_score(insider_deals)
+        result["insider_trading_score"] = insider_score
+        result["insider_trading_flag"] = insider_flag
     
     return result
 

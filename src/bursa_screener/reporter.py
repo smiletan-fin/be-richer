@@ -49,13 +49,17 @@ def print_summary(results: list[StockResult], universe_size: int, elapsed: float
     watchlist  = [r for r in results if r.classification == "WATCHLIST"]
     rejected   = [r for r in results if r.classification == "REJECT"]
     
-    # Check if any stock has FMP or KLSE data
+    # Check if any stock has FMP, KLSE, or Analyst data
     has_fmp = any(r.fund.has_fmp_data for r in results)
     has_klse = any(r.fund.has_klse_data for r in results)
+    has_analyst = any(r.fund.has_analyst_data for r in results)
     klse_count = sum(1 for r in results if r.fund.has_klse_data)
+    analyst_count = sum(1 for r in results if r.fund.has_analyst_data)
     
     # Build data sources status line
     sources = ["yfinance (15-min delayed)"]
+    if has_analyst:
+        sources.append(f"[green]Analyst targets ({analyst_count} stocks)[/green]")
     if has_klse:
         sources.append(f"[green]KLSE Screener ({klse_count} stocks)[/green]")
     else:
@@ -80,9 +84,10 @@ def print_summary(results: list[StockResult], universe_size: int, elapsed: float
 
 
 def print_screening_table(results: list[StockResult], show_rejected: bool = False) -> None:
-    # Check if any stock has FMP or KLSE data
+    # Check if any stock has FMP or KLSE or Analyst data
     has_fmp = any(r.fund.has_fmp_data for r in results)
     has_klse = any(r.fund.has_klse_data for r in results)
+    has_analyst = any(r.fund.has_analyst_data for r in results)
     
     table = Table(
         title="📊 Full Screening Table",
@@ -105,6 +110,13 @@ def print_screening_table(results: list[StockResult], show_rejected: bool = Fals
         ("ROE",         "right", 6),
         ("EPSGrowth",   "right", 9),
     ]
+    
+    # Add Analyst target column if data available
+    if has_analyst:
+        cols.extend([
+            ("Target",   "right", 8),
+            ("Upside",   "right", 7),
+        ])
     
     # Add Earnings Surprise column if FMP data available
     if has_fmp:
@@ -159,6 +171,15 @@ def print_screening_table(results: list[StockResult], show_rejected: bool = Fals
             row["roe"],
             row["earnings_growth"],
         ]
+        
+        # Add analyst target if data available
+        if has_analyst:
+            upside_val = r.fund.analyst_target_upside
+            upside_str = f"[green]{upside_val:+.1f}%[/green]" if upside_val and upside_val > 0 else (f"[red]{upside_val:+.1f}%[/red]" if upside_val and upside_val < 0 else "[dim]—[/dim]")
+            row_data.extend([
+                row["analyst_target"] if r.fund.has_analyst_data else "[dim]—[/dim]",
+                upside_str if r.fund.has_analyst_data else "[dim]—[/dim]",
+            ])
         
         # Add earnings surprise if FMP data available
         if has_fmp:
@@ -217,6 +238,17 @@ def print_group_panel(results: list[StockResult], classification: str) -> None:
         if r.fund.has_fmp_data:
             es_info = f"  EarnSurp=[bold]{r.fund.score_earnings_surprise}/5[/bold]"
         
+        # Format analyst target info
+        analyst_info = ""
+        if r.fund.has_analyst_data and r.fund.analyst_target_mean:
+            upside = r.fund.analyst_target_upside or 0
+            upside_color = "green" if upside > 0 else "red"
+            analyst_info = (
+                f"  Analyst: Target=[bold]RM {r.fund.analyst_target_mean:.2f}[/bold] "
+                f"([{upside_color}]{upside:+.1f}%[/{upside_color}] upside) "
+                f"Score=[bold]{r.fund.score_analyst_target}/5[/bold]"
+            )
+        
         # Format KLSE enhanced info
         klse_info = ""
         if r.fund.has_klse_data:
@@ -236,6 +268,8 @@ def print_group_panel(results: list[StockResult], classification: str) -> None:
             f"Tech=[bold]{r.technical_score}/25[/bold]  "
             f"Total=[bold]{r.total_score}[/bold]{es_info}"
         )
+        if analyst_info:
+            lines.append(analyst_info)
         if klse_info:
             lines.append(klse_info)
         lines.append(f"  {fund_breakdown}")

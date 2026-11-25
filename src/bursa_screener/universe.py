@@ -341,7 +341,7 @@ SEA_REGIONAL: list[str] = []
 
 
 # ── Convenience groupings ─────────────────────────────────────────────────────
-def get_universe(tier: str = "klci", force_refresh: bool = False) -> list[str]:
+def get_universe(tier: str = "klci", force_refresh: bool = False, sector: str | None = None) -> list[str]:
     """
     Return deduplicated ticker list.
 
@@ -350,6 +350,12 @@ def get_universe(tier: str = "klci", force_refresh: bool = False) -> list[str]:
     "klci"   – KLCI 30 only  (fast, ~30 tickers)
     "broad"  – KLCI + mid-cap  (~45 tickers)
     "full"   – all tiers
+    
+    sector options
+    --------------
+    If provided, filters tickers by sector using KLSE Screener data.
+    Supported sectors: banking, technology, plantation, property, construction,
+                      consumer, industrial, healthcare, telco, utilities, energy, reit
     
     force_refresh: bypass cache and fetch fresh KLCI constituents
     """
@@ -369,7 +375,88 @@ def get_universe(tier: str = "klci", force_refresh: bool = False) -> list[str]:
         if t not in seen:
             seen.add(t)
             result.append(t)
+    
+    # Apply sector filter if provided
+    if sector:
+        result = filter_by_sector(result, sector)
+    
     return result
+
+
+def filter_by_sector(tickers: list[str], sector: str) -> list[str]:
+    """
+    Filter tickers by sector using KLSE Screener data.
+    
+    Args:
+        tickers: List of ticker symbols to filter
+        sector: Sector name (case-insensitive)
+    
+    Returns:
+        Filtered list of tickers in the specified sector
+    """
+    # Try to import klse_fetcher
+    try:
+        from . import klse_fetcher
+        if not klse_fetcher.is_available():
+            print(f"Warning: KLSE Screener not available, cannot filter by sector")
+            return tickers
+    except ImportError:
+        print(f"Warning: KLSE Screener not available, cannot filter by sector")
+        return tickers
+    
+    # Get all tickers in the sector
+    sector_tickers = set(klse_fetcher.get_sector_tickers(sector))
+    
+    if not sector_tickers:
+        # Sector not found or empty - try filtering by fundamentals
+        print(f"Warning: Sector '{sector}' not found in KLSE data, filtering by fundamentals...")
+        filtered = []
+        for ticker in tickers:
+            fund = klse_fetcher.fetch_fundamentals(ticker)
+            if fund and fund.get("sector", "").lower() == sector.lower():
+                filtered.append(ticker)
+        return filtered if filtered else tickers
+    
+    # Filter to only tickers in both the input list and the sector
+    return [t for t in tickers if t in sector_tickers]
+
+
+def get_sector_universe(sector: str) -> list[str]:
+    """
+    Get all tickers in a sector directly from KLSE Screener.
+    
+    This bypasses the predefined universes and returns all stocks
+    in the specified sector.
+    
+    Args:
+        sector: Sector name (e.g., "banking", "technology", "plantation")
+    
+    Returns:
+        List of all tickers in the sector
+    """
+    try:
+        from . import klse_fetcher
+        if klse_fetcher.is_available():
+            return klse_fetcher.get_sector_tickers(sector)
+    except ImportError:
+        pass
+    return []
+
+
+def list_available_sectors() -> list[dict]:
+    """
+    List all available sectors that can be used for filtering.
+    
+    Returns:
+        List of sector info dicts with 'code', 'name', and 'aliases'
+    """
+    try:
+        from . import klse_fetcher
+        if klse_fetcher.is_available():
+            return klse_fetcher.get_available_sectors()
+    except ImportError:
+        pass
+    return []
 
 
 # For backward compatibility — lazy loaded on import
