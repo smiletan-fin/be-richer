@@ -139,15 +139,15 @@ Run the screener directly from GitHub without setting up locally.
 
 | Workflow | Trigger | Description |
 |----------|---------|-------------|
-| **KLCI Stock Screener** | Manual | Scan KLCI/broad/full universe |
 | **Sector Stock Screener** | Manual + Saturday 8am MYT | Scan by sector (banking, technology, etc.) |
+| **Position Analyzer** | Manual | Analyze your stock position (hold/take profit/cut loss) |
 
 ### KLCI Screener Workflow
 
 1. Go to **Actions** tab in your repository
-2. Select **"KLCI Stock Screener"** workflow
+2. Select **"Sector Stock Screener"** workflow
 3. Click **"Run workflow"**
-4. Choose tier (klci/broad/full) and options
+4. Choose sector and tier options
 5. Download HTML report from **Artifacts** when complete
 
 ### Sector Screener Workflow (NEW!)
@@ -173,6 +173,99 @@ Scan individual sectors or all sectors in parallel:
 - Sector rotation: Compare `technology` vs `consumer` performance
 
 The workflows use dependency caching to minimize run time (~30 seconds per sector).
+
+### Position Analyzer Workflow (NEW!)
+
+Analyze your existing stock positions directly from GitHub:
+
+1. Go to **Actions** tab → **"Position Analyzer"**
+2. Click **"Run workflow"**
+3. Enter your position details:
+   - **Ticker**: Stock code (e.g., `1155.KL` for Maybank)
+   - **Entry Price**: Your buy price (e.g., `9.50`)
+   - **Shares**: Number of shares held (default: 1000)
+4. Download reports from **Artifacts**
+
+**What you get:**
+- 📊 **HTML Report** — Full analysis with embedded AI prompt
+- 🤖 **AI Prompt** — Ready to paste into ChatGPT/Claude
+- 📄 **JSON Data** — Raw data for programmatic use
+
+**Example Use Cases:**
+- Check if it's time to take profit on a winning position
+- Decide whether to cut loss on an underwater position
+- Get AI-powered analysis with market context
+
+---
+
+## Position Analyzer (NEW!)
+
+Analyze your existing stock positions to determine whether to hold, take profit, or cut loss.
+
+### Features
+
+- **P&L Calculation**: Track profit/loss per share, percentage, and total value
+- **Trend Analysis**: Identify if the stock is in uptrend, downtrend, or sideways movement
+- **Support/Resistance Levels**: Key price levels for decision making
+- **Action Recommendation**: HOLD, TAKE PROFIT, CUT LOSS, ADD MORE, or PARTIAL PROFIT
+- **AI-Ready Prompt**: Comprehensive prompt for deeper LLM analysis
+
+### Usage
+
+```bash
+# Basic position analysis
+be-richer --position 1155.KL --entry 9.50
+
+# With custom share count
+be-richer --position 1155.KL --entry 9.50 --shares 1000
+
+# Analyze a losing position
+be-richer --position 5347.KL --entry 25.00 --shares 500
+```
+
+### Output
+
+The position analyzer generates:
+
+1. **Console Output**: Quick summary with P&L, trend analysis, scores, and recommendation
+2. **HTML Report**: Beautiful, self-contained report with all analysis details
+3. **AI Prompt**: Ready-to-use prompt for ChatGPT/Claude for deeper analysis
+4. **JSON Data**: Raw data for programmatic access
+
+### Recommendation Logic
+
+| Condition | Recommendation |
+|-----------|----------------|
+| Profit ≥20% + Strong technicals | **TAKE PROFIT** (consider partial) |
+| Profit ≥20% + Weak trend | **TAKE PROFIT** (lock gains before reversal) |
+| Profit 10-20% + Strong uptrend | **PARTIAL PROFIT** (take some, let rest run) |
+| Profit <10% + Uptrend | **HOLD** (momentum building) |
+| Loss <5% + Uptrend | **HOLD** (normal volatility) |
+| Loss 5-15% + Weak/Down trend | **CUT LOSS** (preserve capital) |
+| Loss >15% | **CUT LOSS** (significant deterioration) |
+| Small profit + Sideways | **HOLD** (wait for clearer direction) |
+| Any profit + Strong scores | **ADD MORE** (averaging up opportunity) |
+
+### Sample Output
+
+```
+╭────────────────────────── 📊 Position Analysis ──────────────────────────╮
+│ 1155.KL - Malayan Banking Berhad                                         │
+╰──────────────────────────────────────────────────────────────────────────╯
+           💰 Position P&L           
+┏━━━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━┓
+┃ Metric          ┃           Value ┃
+┡━━━━━━━━━━━━━━━━━╇━━━━━━━━━━━━━━━━━┩
+│ Entry Price     │       RM 9.5000 │
+│ Current Price   │      RM 10.1600 │
+│ P&L %           │          +6.95% │
+│ Total P&L       │      RM +660.00 │
+│ Status          │    SMALL PROFIT │
+└─────────────────┴─────────────────┘
+╭───────────────────────── 🎯 Recommendation ──────────────────────────────╮
+│ HOLD - Wait for clearer direction                                        │
+╰──────────────────────────────────────────────────────────────────────────╯
+```
 
 ---
 
@@ -204,6 +297,10 @@ be-richer --cache-stats      # Show cache statistics
 be-richer --clear-cache      # Clear all cached data
 be-richer --no-cache         # Bypass cache (not recommended)
 be-richer --refresh-universe # Force refresh KLCI constituents
+
+# Position Analyzer (NEW!)
+be-richer --position 1155.KL --entry 9.50           # Analyze position
+be-richer --position 1155.KL --entry 9.50 --shares 500  # Custom shares
 
 # FMP (US stocks only - disabled by default)
 be-richer --tickers AAPL MSFT --fmp --html   # Enable FMP for US stocks
@@ -305,30 +402,31 @@ Yahoo Finance aggressively rate-limits free API access. The screener includes ca
 be-richer/
 ├── src/
 │   └── bursa_screener/
-│       ├── __init__.py       # Package entry point
-│       ├── __main__.py       # Allow python -m bursa_screener
-│       ├── screener.py       # CLI entry point
-│       ├── universe.py       # Stock universe (KLCI, mid-cap, SEA, sector filter)
-│       ├── data_fetcher.py   # yfinance wrapper + caching
-│       ├── klse_fetcher.py   # KLSE Screener API client (Malaysian stocks)
-│       ├── fmp_fetcher.py    # FMP API client (US stocks only)
-│       ├── technicals.py     # 25-point technical scorer
-│       ├── fundamentals.py   # 65-84 point fundamental scorer
-│       ├── ranker.py         # Classification + sorting
-│       ├── reporter.py       # Rich terminal output + CSV
-│       ├── html_reporter.py  # HTML report generator
-│       ├── config/           # Sector PE benchmarks
-│       └── cache/            # yfinance, KLSE, FMP cache (auto-created)
+│       ├── __init__.py        # Package entry point
+│       ├── __main__.py        # Allow python -m bursa_screener
+│       ├── screener.py        # CLI entry point
+│       ├── universe.py        # Stock universe (KLCI, mid-cap, SEA, sector filter)
+│       ├── data_fetcher.py    # yfinance wrapper + caching
+│       ├── klse_fetcher.py    # KLSE Screener API client (Malaysian stocks)
+│       ├── fmp_fetcher.py     # FMP API client (US stocks only)
+│       ├── technicals.py      # 25-point technical scorer
+│       ├── fundamentals.py    # 65-84 point fundamental scorer
+│       ├── ranker.py          # Classification + sorting
+│       ├── reporter.py        # Rich terminal output + CSV
+│       ├── html_reporter.py   # HTML report generator
+│       ├── news_fetcher.py    # Google News fetcher for AI analysis
+│       ├── position_analyzer.py  # Position P&L and decision support (NEW!)
+│       ├── config/            # Sector PE benchmarks
+│       └── cache/             # yfinance, KLSE, FMP cache (auto-created)
 ├── .github/
 │   └── workflows/
-│       ├── klci-scan.yml     # GitHub Actions: KLCI/broad/full screener
-│       └── sector-scan.yml   # GitHub Actions: Sector-based screener
-├── results/                  # CSV/HTML exports (auto-created)
-├── .env                      # FMP API key (not committed)
-├── pyproject.toml            # Project configuration
-├── requirements.txt          # Dependencies
-├── run.sh                    # Shell shortcuts
-└── README.md                 # This file
+│       └── sector-scan.yml    # GitHub Actions: Sector-based screener
+├── results/                   # CSV/HTML exports (auto-created)
+├── .env                       # FMP API key (not committed)
+├── pyproject.toml             # Project configuration
+├── requirements.txt           # Dependencies
+├── run.sh                     # Shell shortcuts
+└── README.md                  # This file
 ```
 
 ---
@@ -377,6 +475,7 @@ MID_CAP = [
 | Level 1.6 | ✅ Done | KLSE Screener integration (+14 pts for Malaysian stocks) |
 | Level 1.7 | ✅ Done | Analyst target prices (+5 pts), insider trading, sector filter |
 | Level 1.8 | 🔸 Partial | FMP integration (disabled by default - US stocks only) |
+| Level 1.9 | ✅ Done | Position Analyzer — P&L tracking, trend analysis, AI-ready prompts |
 | Level 2 | 🔜 Planned | LLM deep analysis — catalyst scoring, Core EPS normalization |
 | Level 3 | 🔜 Planned | Weekly scheduler, Telegram/email alerts, portfolio tracker |
 

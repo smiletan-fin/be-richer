@@ -1,0 +1,112 @@
+name: Position Analyzer
+
+on:
+  workflow_dispatch:
+    inputs:
+      ticker:
+        description: 'Stock ticker (e.g., 1155.KL for Maybank, 5347.KL for Tenaga)'
+        required: true
+        type: string
+      entry_price:
+        description: 'Your entry price (e.g., 9.50)'
+        required: true
+        type: string
+      shares:
+        description: 'Number of shares held (default: 1000)'
+        required: false
+        default: '1000'
+        type: string
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  analyze:
+    name: 📊 Analyze ${{ inputs.ticker }}
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Run Position Analyzer
+        id: analyze
+        run: |
+          mkdir -p results
+          
+          echo "🔍 Analyzing position: ${{ inputs.ticker }}"
+          echo "📈 Entry Price: RM ${{ inputs.entry_price }}"
+          echo "📊 Shares: ${{ inputs.shares }}"
+          echo ""
+          
+          python -m bursa_screener \
+            --position "${{ inputs.ticker }}" \
+            --entry "${{ inputs.entry_price }}" \
+            --shares "${{ inputs.shares }}"
+          
+          echo ""
+          echo "=== Files in results directory ==="
+          ls -la results/ || echo "No results directory"
+
+      - name: Upload Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: position-${{ inputs.ticker }}-${{ github.run_number }}
+          path: results/
+          if-no-files-found: warn
+          retention-days: 30
+
+      - name: Generate Summary
+        run: |
+          echo "# 📊 Position Analysis: ${{ inputs.ticker }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📋 Input Parameters" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Ticker | \`${{ inputs.ticker }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| Entry Price | RM ${{ inputs.entry_price }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Shares | ${{ inputs.shares }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## 📁 Generated Reports" >> $GITHUB_STEP_SUMMARY
+          if [ -d "results" ] && [ "$(ls -A results 2>/dev/null)" ]; then
+            echo "| File | Description |" >> $GITHUB_STEP_SUMMARY
+            echo "|------|-------------|" >> $GITHUB_STEP_SUMMARY
+            for f in results/*position_report.html; do
+              [ -f "$f" ] && echo "| \`$(basename $f)\` | 📊 HTML Report with AI Prompt |" >> $GITHUB_STEP_SUMMARY
+            done
+            for f in results/*position_prompt.txt; do
+              [ -f "$f" ] && echo "| \`$(basename $f)\` | 🤖 AI Analysis Prompt |" >> $GITHUB_STEP_SUMMARY
+            done
+            for f in results/*position_data.json; do
+              [ -f "$f" ] && echo "| \`$(basename $f)\` | 📄 Raw JSON Data |" >> $GITHUB_STEP_SUMMARY
+            done
+          else
+            echo "⚠️ No report files generated" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📥 Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "1. Download the **Artifacts** from the section below" >> $GITHUB_STEP_SUMMARY
+          echo "2. Open the HTML report in your browser" >> $GITHUB_STEP_SUMMARY
+          echo "3. Click **'Show AI Prompt'** → **'Copy Prompt'**" >> $GITHUB_STEP_SUMMARY
+          echo "4. Paste into ChatGPT or Claude for detailed analysis" >> $GITHUB_STEP_SUMMARY

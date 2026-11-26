@@ -54,6 +54,13 @@ try:
 except ImportError:
     ANALYZER_AVAILABLE = False
 
+# Position analyzer for existing positions
+try:
+    from . import position_analyzer
+    POSITION_ANALYZER_AVAILABLE = True
+except ImportError:
+    POSITION_ANALYZER_AVAILABLE = False
+
 console = Console()
 
 
@@ -219,6 +226,10 @@ Examples:
   be-richer --analyze 1155.KL  # analyze Maybank
   be-richer --analyze MAYBANK  # same as above (auto-resolves to 1155.KL)
   be-richer --analyze CIMB --output ./my-reports  # custom output directory
+  
+  # Position analysis (for existing holdings):
+  be-richer --position 1155.KL --entry 9.50  # analyze with entry price
+  be-richer --position MAYBANK --entry 9.50 --shares 2000  # with share count
         """,
     )
     parser.add_argument(
@@ -311,6 +322,25 @@ Examples:
         metavar="DIR",
         help="Output directory for analysis files (default: results/)",
     )
+    parser.add_argument(
+        "--position",
+        type=str,
+        metavar="TICKER",
+        help="Analyze an existing position (e.g., --position 1155.KL --entry 9.50)",
+    )
+    parser.add_argument(
+        "--entry",
+        type=float,
+        metavar="PRICE",
+        help="Entry price for position analysis (required with --position)",
+    )
+    parser.add_argument(
+        "--shares",
+        type=int,
+        default=1000,
+        metavar="NUM",
+        help="Number of shares held (default: 1000)",
+    )
 
     args = parser.parse_args()
     
@@ -342,6 +372,44 @@ Examples:
         console.print(f"  1. Read the report: [dim]{paths['report']}[/dim]")
         console.print(f"  2. Copy the AI prompt to ChatGPT/Claude for deeper analysis")
         console.print(f"  3. Research recent news and announcements for {args.analyze}")
+        
+        return
+    
+    # Position analysis mode
+    if args.position:
+        if not POSITION_ANALYZER_AVAILABLE:
+            console.print("[red]Error: Position analyzer module not available[/red]")
+            return
+        
+        if args.entry is None:
+            console.print("[red]Error: --entry PRICE is required with --position[/red]")
+            console.print("[dim]Example: be-richer --position 1155.KL --entry 9.50[/dim]")
+            return
+        
+        analysis = position_analyzer.analyze_position(
+            args.position,
+            entry_price=args.entry,
+            shares=args.shares,
+            use_cache=not args.no_cache,
+            verbose=True,
+        )
+        
+        # Print summary to console
+        position_analyzer.print_position_analysis(analysis)
+        
+        # Save outputs
+        output_dir = args.output or "results"
+        paths = position_analyzer.save_position_analysis(analysis, output_dir)
+        
+        console.print("\n[bold]📁 Files Generated:[/bold]")
+        console.print(f"  Report:    {paths['report']}")
+        console.print(f"  AI Prompt: {paths['prompt']}")
+        console.print(f"  JSON Data: {paths['json']}")
+        
+        console.print("\n[bold cyan]💡 Next Steps:[/bold cyan]")
+        console.print(f"  1. Open the HTML report: [dim]{paths['report']}[/dim]")
+        console.print(f"  2. Copy the AI prompt to ChatGPT/Claude for detailed position advice")
+        console.print(f"  3. Set stop-loss and profit targets based on the key levels")
         
         return
     
