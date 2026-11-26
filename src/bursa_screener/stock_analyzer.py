@@ -412,18 +412,35 @@ def _generate_report_markdown(analysis: StockAnalysis) -> str:
             report += f"- {weakness}\n"
         report += "\n"
     
+    # Helper function for safe formatting
+    def _fmt(val, fmt_str=".2f", suffix="", prefix="", default="N/A"):
+        """Safely format a value that might be None."""
+        if val is None:
+            return default
+        try:
+            return f"{prefix}{val:{fmt_str}}{suffix}"
+        except (ValueError, TypeError):
+            return str(val) if val else default
+    
     # Price information
+    pe_val = f.klse_pe if f.klse_pe is not None else f.pe_ttm
+    pb_val = f.klse_pb if f.klse_pb is not None else f.pb
+    div_val = f.klse_div_yield if f.klse_div_yield is not None else f.div_yield_pct
+    
+    # Safe price display
+    price_display = f"RM {t.price:.3f}" if t.price is not None else "N/A"
+    
     report += f"""---
 
 ## 💰 Price & Valuation
 
 | Metric | Value | Assessment |
 |--------|-------|------------|
-| **Current Price** | RM {t.price:.3f} | - |
-| **PE Ratio** | {f.klse_pe or f.pe_ttm:.1f}x | {_assess_pe(f.pe_ttm)} |
-| **P/B Ratio** | {f.klse_pb or f.pb:.2f}x | {_assess_pb(f.pb)} |
-| **Dividend Yield** | {f.klse_div_yield or f.div_yield_pct:.2f}% | {_assess_div_yield(f.div_yield_pct)} |
-| **52-Week Range** | {t.pct_from_52wk_low:+.1f}% from low / -{t.pct_from_52wk_high:.1f}% from high | - |
+| **Current Price** | {price_display} | - |
+| **PE Ratio** | {_fmt(pe_val, '.1f', 'x')} | {_assess_pe(f.pe_ttm)} |
+| **P/B Ratio** | {_fmt(pb_val, '.2f', 'x')} | {_assess_pb(f.pb)} |
+| **Dividend Yield** | {_fmt(div_val, '.2f', '%')} | {_assess_div_yield(f.div_yield_pct)} |
+| **52-Week Range** | {_fmt(t.pct_from_52wk_low, '+.1f', '% from low')} / {_fmt(t.pct_from_52wk_high, '.1f', '% from high', '-')} | - |
 
 """
     
@@ -433,8 +450,8 @@ def _generate_report_markdown(analysis: StockAnalysis) -> str:
 
 | Metric | Value |
 |--------|-------|
-| Mean Target | RM {f.analyst_target_mean:.2f} |
-| Upside/Downside | {f.analyst_target_upside:+.1f}% |
+| Mean Target | RM {_fmt(f.analyst_target_mean, '.2f')} |
+| Upside/Downside | {_fmt(f.analyst_target_upside, '+.1f', '%')} |
 | Recommendation | {f.analyst_recommendation.upper() if f.analyst_recommendation else 'N/A'} |
 | Number of Analysts | {f.analyst_count or 'N/A'} |
 
@@ -476,10 +493,10 @@ def _generate_report_markdown(analysis: StockAnalysis) -> str:
 
 | Metric | Value | Industry Benchmark |
 |--------|-------|-------------------|
-| ROE | {f.roe_pct:.1f}% | >15% is excellent |
-| Net Gearing | {f.net_gearing:.2f}x | <0.5 is healthy |
-| Earnings Growth | {f.earnings_growth_pct:+.1f}% | >15% is good |
-| Revenue Growth | {f.revenue_growth_pct:+.1f}% | >10% is good |
+| ROE | {_fmt(f.roe_pct, '.1f', '%')} | >15% is excellent |
+| Net Gearing | {_fmt(f.net_gearing, '.2f', 'x')} | <0.5 is healthy |
+| Earnings Growth | {_fmt(f.earnings_growth_pct, '+.1f', '%')} | >15% is good |
+| Revenue Growth | {_fmt(f.revenue_growth_pct, '+.1f', '%')} | >10% is good |
 
 """
     
@@ -495,33 +512,49 @@ def _generate_report_markdown(analysis: StockAnalysis) -> str:
         report += "\n"
     
     # Technical analysis
+    # Safe values for technical display
+    ma20_display = f"{t.ma20:.3f}" if t.ma20 is not None else "N/A"
+    ma50_display = f"{t.ma50:.3f}" if t.ma50 is not None else "N/A"
+    ma200_display = f"{t.ma200:.3f}" if t.ma200 is not None else "N/A"
+    rsi_display = f"{t.rsi_val:.0f}" if t.rsi_val is not None else "N/A"
+    volume_ratio_display = f"{t.volume_ratio:.1f}" if t.volume_ratio is not None else "N/A"
+    rs_ratio_display = f"{t.rs_ratio:.2f}" if t.rs_ratio is not None else "N/A"
+    week_return_display = f"{t.week_return:+.2f}" if t.week_return is not None else "N/A"
+    month_return_display = f"{t.month_return:+.2f}" if t.month_return is not None else "N/A"
+    
+    # Safe comparisons
+    above_ma20 = "Above" if t.price and t.ma20 and t.price > t.ma20 else "Below"
+    above_ma50 = "Above" if t.price and t.ma50 and t.price > t.ma50 else "Below"
+    above_ma200 = "Above" if t.price and t.ma200 and t.price > t.ma200 else "Below"
+    macd_status = "Bullish" if t.macd_val is not None and t.macd_signal is not None and t.macd_val > t.macd_signal else "Bearish"
+    
     report += f"""---
 
 ## 📉 Technical Analysis ({t.total}/25 points)
 
-**Status:** {t.status}
+**Status:** {t.status or 'N/A'}
 
 ### Score Breakdown
 
 | Factor | Score | Max | Assessment |
 |--------|-------|-----|------------|
-| 20-Day MA | {t.score_20ma} | 3 | {"Above" if t.price > t.ma20 else "Below"} MA ({t.ma20:.3f}) |
-| 50-Day MA | {t.score_50ma} | 3 | {"Above" if t.price > t.ma50 else "Below"} MA ({t.ma50:.3f}) |
-| 200-Day MA | {t.score_200ma} | 3 | {"Above" if t.price > t.ma200 else "Below"} MA ({t.ma200:.3f}) |
-| RSI ({t.rsi_val:.0f}) | {t.score_rsi} | 2 | {_assess_rsi(t.rsi_val)} |
-| MACD | {t.score_macd} | 2 | {"Bullish" if t.macd_val > t.macd_signal else "Bearish"} |
-| Volume | {t.score_volume} | 3 | {t.volume_ratio:.1f}x avg volume |
+| 20-Day MA | {t.score_20ma} | 3 | {above_ma20} MA ({ma20_display}) |
+| 50-Day MA | {t.score_50ma} | 3 | {above_ma50} MA ({ma50_display}) |
+| 200-Day MA | {t.score_200ma} | 3 | {above_ma200} MA ({ma200_display}) |
+| RSI ({rsi_display}) | {t.score_rsi} | 2 | {_assess_rsi(t.rsi_val)} |
+| MACD | {t.score_macd} | 2 | {macd_status} |
+| Volume | {t.score_volume} | 3 | {volume_ratio_display}x avg volume |
 | Breakout Pattern | {t.score_breakout} | 2 | {_score_assessment(t.score_breakout, 2)} |
 | Support Holding | {t.score_support} | 2 | {_score_assessment(t.score_support, 2)} |
-| Relative Strength | {t.score_rs} | 3 | {t.rs_ratio:.2f}x vs KLCI |
+| Relative Strength | {t.score_rs} | 3 | {rs_ratio_display}x vs KLCI |
 | 52-Week Position | {t.score_52wk} | 2 | {_score_assessment(t.score_52wk, 2)} |
 
 ### Price Performance
 
 | Period | Return |
 |--------|--------|
-| 1 Week | {t.week_return:+.2f}% |
-| 1 Month | {t.month_return:+.2f}% |
+| 1 Week | {week_return_display}% |
+| 1 Month | {month_return_display}% |
 
 """
     
@@ -656,11 +689,35 @@ def _generate_comprehensive_ai_prompt(analysis: StockAnalysis) -> str:
     t = analysis.tech_score
     fundamentals = analysis.fundamentals
     
+    # Helper function for safe formatting of potentially None values
+    def _safe(val, fmt=".2f", suffix="", prefix="", default="N/A"):
+        """Safely format a value that might be None."""
+        if val is None:
+            return default
+        try:
+            if fmt.endswith("f"):
+                return f"{prefix}{val:{fmt}}{suffix}"
+            elif "," in fmt:
+                return f"{prefix}{val:{fmt}}{suffix}"
+            else:
+                return f"{prefix}{val:{fmt}}{suffix}"
+        except (ValueError, TypeError):
+            return str(val) if val else default
+    
+    def _safe_int(val, default="N/A"):
+        """Safely format an integer with commas."""
+        if val is None:
+            return default
+        try:
+            return f"{int(val):,}"
+        except (ValueError, TypeError):
+            return str(val) if val else default
+    
     # Basic info
     ticker = analysis.ticker
     name = analysis.name or "Unknown"
     sector = f.klse_sector or f.sector or "Unknown"
-    price = t.price
+    price = t.price if t.price else 0.0
     
     # Build data sections
     prompt = f"""You are a senior equity research analyst with 15+ years of experience analyzing Malaysian stocks. Your task is to provide a comprehensive investment analysis based on the data provided below.
@@ -675,8 +732,8 @@ Company Name: {name}
 Ticker: {ticker} (Bursa Malaysia)
 Sector: {sector}
 Industry: {fundamentals.get('industry', 'N/A')}
-Current Price: RM {price:.3f}
-Market Cap: RM {fundamentals.get('market_cap', 0)/1e9:.2f} billion
+Current Price: RM {_safe(price, '.3f')}
+Market Cap: RM {_safe((fundamentals.get('market_cap') or 0)/1e9, '.2f')} billion
 Analysis Date: {analysis.analysis_date}
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -702,36 +759,36 @@ SCORING SUMMARY:
 FUNDAMENTAL SCORE BREAKDOWN ({f.total}/{f.max_score} points):
 
 A. EARNINGS QUALITY ({f.score_earnings_quality}/10)
-   - PE Ratio (TTM): {f.pe_ttm:.2f}x (Sector benchmark: ~15x)
-   - Forward PE: {f.forward_pe:.2f}x
+   - PE Ratio (TTM): {_safe(f.pe_ttm, '.2f', 'x')} (Sector benchmark: ~15x)
+   - Forward PE: {_safe(f.forward_pe, '.2f', 'x')}
    - Interpretation: {"Undervalued" if f.pe_ttm and f.pe_ttm < 12 else "Fair value" if f.pe_ttm and f.pe_ttm < 18 else "Premium" if f.pe_ttm else "N/A"}
 
 B. EARNINGS GROWTH ({f.score_earnings_growth}/10)
-   - YoY Earnings Growth: {f.earnings_growth_pct:+.1f}%
-   - YoY Revenue Growth: {f.revenue_growth_pct:+.1f}%
+   - YoY Earnings Growth: {_safe(f.earnings_growth_pct, '+.1f', '%')}
+   - YoY Revenue Growth: {_safe(f.revenue_growth_pct, '+.1f', '%')}
    - CAN SLIM Threshold: 25%+ ({"PASS ✓" if f.earnings_growth_pct and f.earnings_growth_pct >= 25 else "BELOW"})
 
 C. RETURN ON EQUITY ({f.score_roe}/10)
-   - ROE: {f.roe_pct:.1f}%
+   - ROE: {_safe(f.roe_pct, '.1f', '%')}
    - Buffett's Threshold: 15%+ ({"PASS ✓" if f.roe_pct and f.roe_pct >= 15 else "BELOW"})
 
 D. FINANCIAL HEALTH ({f.score_financial_health}/10)
-   - Net Gearing: {f.net_gearing:.2f}x
-   - Total Debt: RM {fundamentals.get('total_debt', 0)/1e6:.1f}M
-   - Total Cash: RM {fundamentals.get('total_cash', 0)/1e6:.1f}M
-   - Assessment: {"NET CASH ✓" if f.net_gearing and f.net_gearing < 0 else "LOW DEBT ✓" if f.net_gearing and f.net_gearing < 0.3 else "MODERATE DEBT" if f.net_gearing and f.net_gearing < 0.7 else "HIGH DEBT ⚠" if f.net_gearing else "N/A"}
+   - Net Gearing: {_safe(f.net_gearing, '.2f', 'x')}
+   - Total Debt: RM {_safe((fundamentals.get('total_debt') or 0)/1e6, '.1f')}M
+   - Total Cash: RM {_safe((fundamentals.get('total_cash') or 0)/1e6, '.1f')}M
+   - Assessment: {"NET CASH ✓" if f.net_gearing is not None and f.net_gearing < 0 else "LOW DEBT ✓" if f.net_gearing is not None and f.net_gearing < 0.3 else "MODERATE DEBT" if f.net_gearing is not None and f.net_gearing < 0.7 else "HIGH DEBT ⚠" if f.net_gearing is not None else "N/A"}
 
 E. VALUATION ({f.score_valuation}/12)
-   - PE Ratio: {f.pe_ttm:.2f}x
-   - P/B Ratio: {f.pb:.2f}x
-   - Dividend Yield: {f.div_yield_pct:.2f}%
+   - PE Ratio: {_safe(f.pe_ttm, '.2f', 'x')}
+   - P/B Ratio: {_safe(f.pb, '.2f', 'x')}
+   - Dividend Yield: {_safe(f.div_yield_pct, '.2f', '%')}
 
 F. CASH FLOW ({f.score_cashflow}/5)
-   - Operating Cash Flow: RM {fundamentals.get('operating_cash_flow', 0)/1e6:.1f}M
-   - FCF Yield: {"Positive" if fundamentals.get('operating_cash_flow', 0) > 0 else "Negative ⚠"}
+   - Operating Cash Flow: RM {_safe((fundamentals.get('operating_cash_flow') or 0)/1e6, '.1f')}M
+   - FCF Yield: {"Positive" if (fundamentals.get('operating_cash_flow') or 0) > 0 else "Negative ⚠"}
 
 G. DIVIDENDS ({f.score_dividends}/3)
-   - Dividend Yield: {f.div_yield_pct:.2f}%
+   - Dividend Yield: {_safe(f.div_yield_pct, '.2f', '%')}
    - {"High yield (>5%)" if f.div_yield_pct and f.div_yield_pct >= 5 else "Good yield (3-5%)" if f.div_yield_pct and f.div_yield_pct >= 3 else "Modest/No dividend"}
 
 H. IMPROVING FUNDAMENTALS ({f.score_improving}/5)
@@ -742,9 +799,9 @@ H. IMPROVING FUNDAMENTALS ({f.score_improving}/5)
     if f.has_analyst_data and f.analyst_target_mean:
         prompt += f"""
 I. ANALYST CONSENSUS ({f.score_analyst_target}/5)
-   - Mean Target Price: RM {f.analyst_target_mean:.2f}
-   - Current Price: RM {price:.2f}
-   - Implied Upside: {f.analyst_target_upside:+.1f}%
+   - Mean Target Price: RM {_safe(f.analyst_target_mean, '.2f')}
+   - Current Price: RM {_safe(price, '.2f')}
+   - Implied Upside: {_safe(f.analyst_target_upside, '+.1f', '%')}
    - Recommendation: {f.analyst_recommendation.upper() if f.analyst_recommendation else 'N/A'}
    - Number of Analysts: {f.analyst_count or 'N/A'}
 """
@@ -759,15 +816,15 @@ I. ANALYST CONSENSUS ({f.score_analyst_target}/5)
 Note: KLSE Screener data is more accurate for Malaysian stocks than global data providers.
 
 ENHANCED FUNDAMENTALS:
-   - PE Ratio (KLSE): {f.klse_pe:.2f}x
-   - ROE (KLSE): {f.klse_roe:.2f}%
-   - P/B (KLSE): {f.klse_pb:.2f}x
-   - Dividend Yield (KLSE): {f.klse_div_yield:.2f}%
-   - Sector: {f.klse_sector}
+   - PE Ratio (KLSE): {_safe(f.klse_pe, '.2f', 'x')}
+   - ROE (KLSE): {_safe(f.klse_roe, '.2f', '%')}
+   - P/B (KLSE): {_safe(f.klse_pb, '.2f', 'x')}
+   - Dividend Yield (KLSE): {_safe(f.klse_div_yield, '.2f', '%')}
+   - Sector: {f.klse_sector or 'N/A'}
 
 QUARTERLY PERFORMANCE:
-   - Latest QoQ Growth: {f.latest_qoq:+.1f}%
-   - Latest YoY Growth: {f.latest_yoy:+.1f}%
+   - Latest QoQ Growth: {_safe(f.latest_qoq, '+.1f', '%')}
+   - Latest YoY Growth: {_safe(f.latest_yoy, '+.1f', '%')}
 
 ENHANCED SCORES:
    J. Earnings Momentum: {f.score_earnings_momentum}/5 (QoQ/YoY acceleration)
@@ -795,7 +852,14 @@ INSTITUTIONAL ACTIVITY (Recent Transactions):
 """
             for txn in f._raw_shareholding[:5]:
                 action = "ACQUIRED" if 'acquired' in str(txn.get('type', '')).lower() else "DISPOSED"
-                prompt += f"   - {txn.get('date', 'N/A')}: {txn.get('name', 'Unknown')[:30]} {action} {txn.get('shares', 'N/A'):,} shares\n"
+                # Handle shares formatting safely - could be int, float, or string
+                shares_val = txn.get('shares')
+                if isinstance(shares_val, (int, float)) and shares_val > 0:
+                    shares_str = f"{int(shares_val):,}"
+                else:
+                    shares_str = str(shares_val) if shares_val else "N/A"
+                name_str = str(txn.get('name', 'Unknown'))[:30]
+                prompt += f"   - {txn.get('date', 'N/A')}: {name_str} {action} {shares_str} shares\n"
 
     # Technical data
     prompt += f"""
@@ -806,34 +870,34 @@ INSTITUTIONAL ACTIVITY (Recent Transactions):
 TECHNICAL SCORE BREAKDOWN ({t.total}/25 points):
 
 TREND ANALYSIS:
-   - Price: RM {price:.4f}
-   - 20-Day MA: RM {t.ma20:.4f} (Price is {"ABOVE ✓" if price > t.ma20 else "BELOW ✗"}) - Score: {t.score_20ma}/3
-   - 50-Day MA: RM {t.ma50:.4f} (Price is {"ABOVE ✓" if price > t.ma50 else "BELOW ✗"}) - Score: {t.score_50ma}/3
-   - 200-Day MA: RM {t.ma200:.4f} (Price is {"ABOVE ✓" if price > t.ma200 else "BELOW ✗"}) - Score: {t.score_200ma}/3
-   - Trend Status: {t.status}
+   - Price: RM {_safe(price, '.4f')}
+   - 20-Day MA: RM {_safe(t.ma20, '.4f')} (Price is {"ABOVE ✓" if price and t.ma20 and price > t.ma20 else "BELOW ✗"}) - Score: {t.score_20ma}/3
+   - 50-Day MA: RM {_safe(t.ma50, '.4f')} (Price is {"ABOVE ✓" if price and t.ma50 and price > t.ma50 else "BELOW ✗"}) - Score: {t.score_50ma}/3
+   - 200-Day MA: RM {_safe(t.ma200, '.4f')} (Price is {"ABOVE ✓" if price and t.ma200 and price > t.ma200 else "BELOW ✗"}) - Score: {t.score_200ma}/3
+   - Trend Status: {t.status or 'N/A'}
 
 MOMENTUM INDICATORS:
-   - RSI (14-period): {t.rsi_val:.1f} ({"Overbought >70" if t.rsi_val > 70 else "Bullish 50-70 ✓" if t.rsi_val >= 50 else "Neutral 30-50" if t.rsi_val >= 30 else "Oversold <30"}) - Score: {t.score_rsi}/2
-   - MACD: {t.macd_val:.4f}
-   - MACD Signal: {t.macd_signal:.4f}
-   - MACD Status: {"BULLISH (MACD > Signal) ✓" if t.macd_val > t.macd_signal else "BEARISH (MACD < Signal) ✗"} - Score: {t.score_macd}/2
+   - RSI (14-period): {_safe(t.rsi_val, '.1f')} ({"Overbought >70" if t.rsi_val and t.rsi_val > 70 else "Bullish 50-70 ✓" if t.rsi_val and t.rsi_val >= 50 else "Neutral 30-50" if t.rsi_val and t.rsi_val >= 30 else "Oversold <30" if t.rsi_val else "N/A"}) - Score: {t.score_rsi}/2
+   - MACD: {_safe(t.macd_val, '.4f')}
+   - MACD Signal: {_safe(t.macd_signal, '.4f')}
+   - MACD Status: {"BULLISH (MACD > Signal) ✓" if t.macd_val is not None and t.macd_signal is not None and t.macd_val > t.macd_signal else "BEARISH (MACD < Signal) ✗"} - Score: {t.score_macd}/2
 
 VOLUME ANALYSIS:
-   - 30-Day ADV: {t.adv_30d:,.0f} shares
-   - Recent Volume Ratio: {t.volume_ratio:.2f}x average
-   - Volume Assessment: {"Heavy accumulation ✓" if t.volume_ratio >= 1.5 else "Above average" if t.volume_ratio >= 1.2 else "Normal" if t.volume_ratio >= 0.8 else "Below average"} - Score: {t.score_volume}/3
+   - 30-Day ADV: {_safe_int(t.adv_30d)} shares
+   - Recent Volume Ratio: {_safe(t.volume_ratio, '.2f', 'x')}
+   - Volume Assessment: {"Heavy accumulation ✓" if t.volume_ratio and t.volume_ratio >= 1.5 else "Above average" if t.volume_ratio and t.volume_ratio >= 1.2 else "Normal" if t.volume_ratio and t.volume_ratio >= 0.8 else "Below average" if t.volume_ratio else "N/A"} - Score: {t.score_volume}/3
 
 PRICE PERFORMANCE:
-   - 1-Week Return: {t.week_return:+.2f}%
-   - 1-Month Return: {t.month_return:+.2f}%
+   - 1-Week Return: {_safe(t.week_return, '+.2f', '%')}
+   - 1-Month Return: {_safe(t.month_return, '+.2f', '%')}
 
 RELATIVE STRENGTH (vs KLCI):
-   - RS Ratio: {t.rs_ratio:.2f}x ({"OUTPERFORMING ✓" if t.rs_ratio >= 1.2 else "AT PAR" if t.rs_ratio >= 1.0 else "UNDERPERFORMING ✗"}) - Score: {t.score_rs}/3
+   - RS Ratio: {_safe(t.rs_ratio, '.2f', 'x')} ({"OUTPERFORMING ✓" if t.rs_ratio and t.rs_ratio >= 1.2 else "AT PAR" if t.rs_ratio and t.rs_ratio >= 1.0 else "UNDERPERFORMING ✗" if t.rs_ratio else "N/A"}) - Score: {t.score_rs}/3
 
 52-WEEK POSITION (Minervini Template):
-   - Above 52-Week Low: {t.pct_from_52wk_low:+.1f}% (Need >25%: {"✓" if t.pct_from_52wk_low >= 25 else "✗"})
-   - Below 52-Week High: {t.pct_from_52wk_high:.1f}% (Need <25%: {"✓" if t.pct_from_52wk_high <= 25 else "✗"})
-   - In "Sweet Spot": {"YES ✓" if t.pct_from_52wk_low >= 25 and t.pct_from_52wk_high <= 25 else "NO"} - Score: {t.score_52wk}/2
+   - Above 52-Week Low: {_safe(t.pct_from_52wk_low, '+.1f', '%')} (Need >25%: {"✓" if t.pct_from_52wk_low and t.pct_from_52wk_low >= 25 else "✗"})
+   - Below 52-Week High: {_safe(t.pct_from_52wk_high, '.1f', '%')} (Need <25%: {"✓" if t.pct_from_52wk_high is not None and t.pct_from_52wk_high <= 25 else "✗"})
+   - In "Sweet Spot": {"YES ✓" if t.pct_from_52wk_low and t.pct_from_52wk_high is not None and t.pct_from_52wk_low >= 25 and t.pct_from_52wk_high <= 25 else "NO"} - Score: {t.score_52wk}/2
 
 PATTERN RECOGNITION:
    - Breakout Pattern: {t.score_breakout}/2
@@ -1049,7 +1113,9 @@ def print_analysis(analysis: StockAnalysis) -> None:
     metrics.add_column("Value", justify="right")
     metrics.add_column("Assessment")
     
-    metrics.add_row("Price", f"RM {t.price:.3f}", "-")
+    # Safe price display
+    price_str = f"RM {t.price:.3f}" if t.price is not None else "N/A"
+    metrics.add_row("Price", price_str, "-")
     metrics.add_row("PE Ratio", f"{f.pe_ttm:.1f}x" if f.pe_ttm else "N/A", _assess_pe(f.pe_ttm))
     metrics.add_row("ROE", f"{f.roe_pct:.1f}%" if f.roe_pct else "N/A", "Good ✓" if f.roe_pct and f.roe_pct >= 15 else "Weak" if f.roe_pct else "N/A")
     metrics.add_row("Gearing", f"{f.net_gearing:.2f}x" if f.net_gearing is not None else "N/A", "Net Cash ✓" if f.net_gearing and f.net_gearing < 0 else "Healthy" if f.net_gearing and f.net_gearing < 0.5 else "High" if f.net_gearing else "N/A")
