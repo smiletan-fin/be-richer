@@ -240,7 +240,7 @@ jobs:
           echo "Individual analysis reports are available in the **Artifacts** section below." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "Each analysis includes:" >> $GITHUB_STEP_SUMMARY
-          echo "- 📄 Markdown Report (\`*_report.md\`)" >> $GITHUB_STEP_SUMMARY
+          echo "- 📄 HTML Report (\`*_report.html\`) - Open in browser" >> $GITHUB_STEP_SUMMARY
           echo "- 🤖 AI Prompt (\`*_ai_prompt.txt\`)" >> $GITHUB_STEP_SUMMARY
           echo "- 📊 JSON Data (\`*_data.json\`)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY

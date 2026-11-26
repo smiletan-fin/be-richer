@@ -1181,3 +1181,646 @@ def save_analysis(analysis: StockAnalysis, output_dir: str | Path | None = None)
     paths["json"] = json_path
     
     return paths
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HTML REPORT GENERATION
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _generate_html_report(analysis: StockAnalysis) -> str:
+    """Generate a beautiful, comprehensive HTML report for a single stock."""
+    f = analysis.fund_score
+    t = analysis.tech_score
+    s = analysis.summary
+    
+    # Helper functions
+    def _safe(val, fmt=".2f", suffix="", default="N/A"):
+        if val is None:
+            return default
+        try:
+            return f"{val:{fmt}}{suffix}"
+        except (ValueError, TypeError):
+            return str(val) if val else default
+    
+    def _get_class_color(classification: str) -> tuple[str, str]:
+        colors = {
+            "READY TO BUY": ("#22c55e", "#000"),
+            "EARLY RE-RATING": ("#eab308", "#000"),
+            "WATCHLIST": ("#3b82f6", "#fff"),
+            "REJECT": ("#ef4444", "#fff"),
+        }
+        return colors.get(classification, ("#6b7280", "#fff"))
+    
+    def _get_rec_color(rec: str) -> str:
+        if "STRONG BUY" in rec or "BUY" in rec:
+            return "#22c55e"
+        elif "ACCUMULATE" in rec:
+            return "#84cc16"
+        elif "HOLD" in rec:
+            return "#eab308"
+        else:
+            return "#ef4444"
+    
+    def _score_bar(score: int, max_score: int, label: str, color: str = "#3b82f6") -> str:
+        pct = min(100, (score / max_score) * 100) if max_score > 0 else 0
+        return f'''
+            <div class="gauge-container">
+                <div class="gauge-label">{label}</div>
+                <div class="gauge-bar">
+                    <div class="gauge-fill" style="width: {pct:.0f}%; background: {color};"></div>
+                </div>
+                <div class="gauge-value">{score}/{max_score}</div>
+            </div>
+        '''
+    
+    def _metric_card(label: str, value: str, explain: str = "", status: str = "neutral") -> str:
+        status_class = {
+            "good": "metric-good",
+            "warn": "metric-warn", 
+            "bad": "metric-bad",
+            "neutral": ""
+        }.get(status, "")
+        return f'''
+            <div class="metric-card">
+                <div class="metric-label">{label}</div>
+                <div class="metric-value {status_class}">{value}</div>
+                <div class="metric-explain">{explain}</div>
+            </div>
+        '''
+    
+    # Classification styling
+    cls_bg, cls_text = _get_class_color(analysis.classification)
+    rec_color = _get_rec_color(s['recommendation'])
+    
+    # Score colors based on percentage
+    fund_pct = f.total / f.max_score * 100
+    tech_pct = t.total / 25 * 100
+    fund_color = "#22c55e" if fund_pct >= 70 else "#eab308" if fund_pct >= 50 else "#ef4444"
+    tech_color = "#22c55e" if tech_pct >= 70 else "#eab308" if tech_pct >= 50 else "#ef4444"
+    
+    # Valuation metrics with status
+    pe_val = f.klse_pe if f.klse_pe is not None else f.pe_ttm
+    pe_status = "good" if pe_val and 0 < pe_val < 12 else "neutral" if pe_val and pe_val < 20 else "warn" if pe_val and pe_val >= 20 else "bad" if pe_val and pe_val < 0 else "neutral"
+    
+    roe_status = "good" if f.roe_pct and f.roe_pct >= 15 else "neutral" if f.roe_pct and f.roe_pct >= 10 else "warn" if f.roe_pct and f.roe_pct >= 5 else "bad" if f.roe_pct else "neutral"
+    
+    gearing_status = "good" if f.net_gearing is not None and f.net_gearing < 0 else "good" if f.net_gearing is not None and f.net_gearing < 0.3 else "neutral" if f.net_gearing is not None and f.net_gearing < 0.7 else "bad" if f.net_gearing else "neutral"
+    
+    # Build HTML
+    html = f'''<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Stock Analysis - {analysis.ticker}</title>
+    <style>
+        :root {{
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
+            --bg-tertiary: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --border: #475569;
+            --green: #22c55e;
+            --yellow: #eab308;
+            --blue: #3b82f6;
+            --red: #ef4444;
+            --purple: #8b5cf6;
+        }}
+        
+        * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+        
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 20px;
+        }}
+        
+        .container {{ max-width: 1000px; margin: 0 auto; }}
+        
+        /* Header */
+        header {{
+            text-align: center;
+            padding: 30px 20px;
+            background: linear-gradient(135deg, var(--bg-secondary) 0%, #1a2744 100%);
+            border-radius: 20px;
+            margin-bottom: 30px;
+            border-left: 5px solid {cls_bg};
+        }}
+        
+        h1 {{ font-size: 2rem; margin-bottom: 5px; }}
+        .ticker {{ color: var(--blue); font-size: 1.3rem; font-weight: 600; }}
+        .subtitle {{ color: var(--text-secondary); font-size: 1rem; margin-top: 10px; }}
+        
+        .classification-badge {{
+            display: inline-block;
+            padding: 8px 20px;
+            border-radius: 20px;
+            font-weight: 700;
+            font-size: 1rem;
+            margin-top: 15px;
+            background: {cls_bg};
+            color: {cls_text};
+        }}
+        
+        /* Summary Cards */
+        .summary-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 30px;
+        }}
+        
+        .summary-card {{
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }}
+        
+        .summary-label {{ font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px; }}
+        .summary-value {{ font-size: 1.5rem; font-weight: 700; }}
+        .summary-sub {{ font-size: 0.8rem; color: var(--text-secondary); margin-top: 5px; }}
+        
+        /* Section */
+        .section {{
+            background: var(--bg-secondary);
+            border-radius: 16px;
+            padding: 25px;
+            margin-bottom: 25px;
+        }}
+        
+        .section-title {{
+            font-size: 1.3rem;
+            font-weight: 600;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid var(--border);
+        }}
+        
+        /* Score Gauges */
+        .scores-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+        }}
+        
+        .gauge-container {{
+            background: var(--bg-tertiary);
+            border-radius: 10px;
+            padding: 15px;
+        }}
+        
+        .gauge-label {{ font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 8px; }}
+        .gauge-bar {{
+            height: 10px;
+            background: rgba(255,255,255,0.1);
+            border-radius: 5px;
+            overflow: hidden;
+            margin-bottom: 8px;
+        }}
+        .gauge-fill {{ height: 100%; border-radius: 5px; transition: width 0.5s ease; }}
+        .gauge-value {{ font-size: 1.1rem; font-weight: 600; }}
+        
+        /* Metrics Grid */
+        .metrics-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 12px;
+        }}
+        
+        .metric-card {{
+            background: var(--bg-tertiary);
+            border-radius: 10px;
+            padding: 15px;
+        }}
+        
+        .metric-label {{ font-size: 0.8rem; color: var(--text-muted); margin-bottom: 5px; }}
+        .metric-value {{ font-size: 1.2rem; font-weight: 600; margin-bottom: 5px; }}
+        .metric-explain {{ font-size: 0.75rem; color: var(--text-secondary); }}
+        
+        .metric-good {{ color: var(--green); }}
+        .metric-warn {{ color: var(--yellow); }}
+        .metric-bad {{ color: var(--red); }}
+        
+        /* Strengths/Weaknesses */
+        .swot-grid {{
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }}
+        
+        @media (max-width: 600px) {{
+            .swot-grid {{ grid-template-columns: 1fr; }}
+        }}
+        
+        .swot-box {{
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            padding: 20px;
+        }}
+        
+        .swot-title {{
+            font-weight: 600;
+            margin-bottom: 15px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }}
+        
+        .swot-list {{ list-style: none; }}
+        .swot-list li {{
+            padding: 8px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+            font-size: 0.9rem;
+        }}
+        .swot-list li:last-child {{ border-bottom: none; }}
+        
+        /* Flags */
+        .flags {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 15px; }}
+        .flag {{
+            background: var(--bg-tertiary);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 0.8rem;
+        }}
+        .flag.positive {{ background: rgba(34, 197, 94, 0.2); color: #86efac; }}
+        .flag.warning {{ background: rgba(239, 68, 68, 0.2); color: #fca5a5; }}
+        
+        /* AI Prompt Section */
+        .prompt-section {{
+            margin-top: 30px;
+        }}
+        
+        .prompt-toggle {{
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            cursor: pointer;
+            padding: 15px 20px;
+            background: linear-gradient(135deg, #4c1d95 0%, #5b21b6 100%);
+            border: none;
+            border-radius: 12px;
+            color: white;
+            font-weight: 600;
+            font-size: 1rem;
+            width: 100%;
+            transition: all 0.2s;
+        }}
+        
+        .prompt-toggle:hover {{
+            background: linear-gradient(135deg, #5b21b6 0%, #6d28d9 100%);
+            transform: translateY(-2px);
+        }}
+        
+        .prompt-content {{
+            display: none;
+            margin-top: 15px;
+            background: var(--bg-tertiary);
+            border-radius: 12px;
+            padding: 20px;
+        }}
+        
+        .prompt-content.show {{ display: block; }}
+        
+        .prompt-header {{
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+            gap: 10px;
+        }}
+        
+        .prompt-text {{
+            background: var(--bg-primary);
+            border-radius: 8px;
+            padding: 15px;
+            font-family: monospace;
+            font-size: 0.85rem;
+            white-space: pre-wrap;
+            max-height: 400px;
+            overflow-y: auto;
+            line-height: 1.5;
+        }}
+        
+        .copy-btn {{
+            padding: 10px 20px;
+            background: var(--purple);
+            border: none;
+            border-radius: 8px;
+            color: white;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+        }}
+        
+        .copy-btn:hover {{ background: #7c3aed; }}
+        .copy-btn.copied {{ background: var(--green); }}
+        
+        /* Technical Table */
+        .tech-table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+        }}
+        
+        .tech-table th, .tech-table td {{
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }}
+        
+        .tech-table th {{
+            color: var(--text-muted);
+            font-weight: 500;
+            font-size: 0.85rem;
+        }}
+        
+        .tech-table td {{ font-size: 0.95rem; }}
+        
+        .status-above {{ color: var(--green); }}
+        .status-below {{ color: var(--red); }}
+        
+        /* Footer */
+        footer {{
+            text-align: center;
+            padding: 20px;
+            color: var(--text-muted);
+            font-size: 0.85rem;
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <header>
+            <h1>{analysis.name or analysis.ticker}</h1>
+            <div class="ticker">{analysis.ticker}</div>
+            <div class="subtitle">{f.klse_sector or f.sector or 'N/A'} | {analysis.analysis_date}</div>
+            <div class="classification-badge">{analysis.classification}</div>
+        </header>
+        
+        <!-- Summary Cards -->
+        <div class="summary-grid">
+            <div class="summary-card">
+                <div class="summary-label">Recommendation</div>
+                <div class="summary-value" style="color: {rec_color}">{s['recommendation']}</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Risk Level</div>
+                <div class="summary-value">{s['risk_level']}</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Conviction</div>
+                <div class="summary-value">{s['conviction']}</div>
+            </div>
+            <div class="summary-card">
+                <div class="summary-label">Total Score</div>
+                <div class="summary-value">{s['total_score']}</div>
+                <div class="summary-sub">out of {f.max_score + 25}</div>
+            </div>
+        </div>
+        
+        <!-- Scores Section -->
+        <div class="section">
+            <div class="section-title">📊 Score Breakdown</div>
+            <div class="scores-grid">
+                {_score_bar(f.total, f.max_score, "Fundamental Score", fund_color)}
+                {_score_bar(t.total, 25, "Technical Score", tech_color)}
+            </div>
+        </div>
+        
+        <!-- Key Metrics -->
+        <div class="section">
+            <div class="section-title">💰 Key Metrics</div>
+            <div class="metrics-grid">
+                {_metric_card("Current Price", f"RM {_safe(t.price, '.3f')}", "", "neutral")}
+                {_metric_card("PE Ratio", _safe(pe_val, '.1f', 'x'), "< 12 is cheap, > 20 is expensive", pe_status)}
+                {_metric_card("ROE", _safe(f.roe_pct, '.1f', '%'), "> 15% is excellent", roe_status)}
+                {_metric_card("Net Gearing", _safe(f.net_gearing, '.2f', 'x'), "< 0 = net cash, < 0.5 is healthy", gearing_status)}
+                {_metric_card("Dividend Yield", _safe(f.div_yield_pct, '.2f', '%'), "> 4% is high yield", "good" if f.div_yield_pct and f.div_yield_pct >= 4 else "neutral")}
+                {_metric_card("Earnings Growth", _safe(f.earnings_growth_pct, '+.1f', '%'), "> 15% is strong", "good" if f.earnings_growth_pct and f.earnings_growth_pct >= 15 else "warn" if f.earnings_growth_pct and f.earnings_growth_pct >= 0 else "bad" if f.earnings_growth_pct else "neutral")}
+            </div>
+        </div>
+        
+        <!-- Technical Analysis -->
+        <div class="section">
+            <div class="section-title">📈 Technical Analysis</div>
+            <table class="tech-table">
+                <tr>
+                    <th>Indicator</th>
+                    <th>Value</th>
+                    <th>Status</th>
+                    <th>Score</th>
+                </tr>
+                <tr>
+                    <td>Price vs 20-Day MA</td>
+                    <td>RM {_safe(t.price, '.3f')} vs {_safe(t.ma20, '.3f')}</td>
+                    <td class="{'status-above' if t.price and t.ma20 and t.price > t.ma20 else 'status-below'}">{'Above ✓' if t.price and t.ma20 and t.price > t.ma20 else 'Below ✗'}</td>
+                    <td>{t.score_20ma}/3</td>
+                </tr>
+                <tr>
+                    <td>Price vs 50-Day MA</td>
+                    <td>RM {_safe(t.price, '.3f')} vs {_safe(t.ma50, '.3f')}</td>
+                    <td class="{'status-above' if t.price and t.ma50 and t.price > t.ma50 else 'status-below'}">{'Above ✓' if t.price and t.ma50 and t.price > t.ma50 else 'Below ✗'}</td>
+                    <td>{t.score_50ma}/3</td>
+                </tr>
+                <tr>
+                    <td>Price vs 200-Day MA</td>
+                    <td>RM {_safe(t.price, '.3f')} vs {_safe(t.ma200, '.3f')}</td>
+                    <td class="{'status-above' if t.price and t.ma200 and t.price > t.ma200 else 'status-below'}">{'Above ✓' if t.price and t.ma200 and t.price > t.ma200 else 'Below ✗'}</td>
+                    <td>{t.score_200ma}/3</td>
+                </tr>
+                <tr>
+                    <td>RSI (14)</td>
+                    <td>{_safe(t.rsi_val, '.1f')}</td>
+                    <td>{'Overbought ⚠' if t.rsi_val and t.rsi_val > 70 else 'Bullish ✓' if t.rsi_val and t.rsi_val >= 50 else 'Neutral' if t.rsi_val and t.rsi_val >= 30 else 'Oversold' if t.rsi_val else 'N/A'}</td>
+                    <td>{t.score_rsi}/2</td>
+                </tr>
+                <tr>
+                    <td>MACD</td>
+                    <td>{_safe(t.macd_val, '.4f')}</td>
+                    <td class="{'status-above' if t.macd_val and t.macd_signal and t.macd_val > t.macd_signal else 'status-below'}">{'Bullish ✓' if t.macd_val is not None and t.macd_signal is not None and t.macd_val > t.macd_signal else 'Bearish ✗'}</td>
+                    <td>{t.score_macd}/2</td>
+                </tr>
+                <tr>
+                    <td>Volume</td>
+                    <td>{_safe(t.volume_ratio, '.2f')}x avg</td>
+                    <td>{'Heavy ✓' if t.volume_ratio and t.volume_ratio >= 1.5 else 'Above avg' if t.volume_ratio and t.volume_ratio >= 1.2 else 'Normal' if t.volume_ratio else 'N/A'}</td>
+                    <td>{t.score_volume}/3</td>
+                </tr>
+                <tr>
+                    <td>Relative Strength</td>
+                    <td>{_safe(t.rs_ratio, '.2f')}x vs KLCI</td>
+                    <td class="{'status-above' if t.rs_ratio and t.rs_ratio >= 1.0 else 'status-below'}">{'Outperforming ✓' if t.rs_ratio and t.rs_ratio >= 1.2 else 'At par' if t.rs_ratio and t.rs_ratio >= 1.0 else 'Underperforming ✗' if t.rs_ratio else 'N/A'}</td>
+                    <td>{t.score_rs}/3</td>
+                </tr>
+            </table>
+            <div style="margin-top: 15px; padding: 15px; background: var(--bg-tertiary); border-radius: 10px;">
+                <strong>Trend Status:</strong> {t.status or 'N/A'} | 
+                <strong>1-Week:</strong> {_safe(t.week_return, '+.2f', '%')} | 
+                <strong>1-Month:</strong> {_safe(t.month_return, '+.2f', '%')}
+            </div>
+        </div>
+        
+        <!-- Strengths & Weaknesses -->
+        <div class="section">
+            <div class="section-title">⚖️ Strengths & Concerns</div>
+            <div class="swot-grid">
+                <div class="swot-box">
+                    <div class="swot-title" style="color: var(--green);">✅ Strengths</div>
+                    <ul class="swot-list">
+                        {''.join(f'<li>{s}</li>' for s in s['strengths']) if s['strengths'] else '<li style="color: var(--text-muted);">No major strengths identified</li>'}
+                    </ul>
+                </div>
+                <div class="swot-box">
+                    <div class="swot-title" style="color: var(--red);">⚠️ Concerns</div>
+                    <ul class="swot-list">
+                        {''.join(f'<li>{w}</li>' for w in s['weaknesses']) if s['weaknesses'] else '<li style="color: var(--text-muted);">No major concerns identified</li>'}
+                    </ul>
+                </div>
+            </div>
+        </div>
+'''
+    
+    # Add flags if present
+    if f.flags:
+        positive_flags = [fl for fl in f.flags if any(p in fl for p in ["✓", "Net cash", "Strong", "buying", "📈", "🚀"])]
+        warning_flags = [fl for fl in f.flags if any(w in fl for w in ["⚠", "Negative", "High", "Declining", "selling"])]
+        
+        html += '''
+        <div class="section">
+            <div class="section-title">🚩 Flags & Signals</div>
+            <div class="flags">
+'''
+        for fl in positive_flags:
+            html += f'<span class="flag positive">{fl}</span>\n'
+        for fl in warning_flags:
+            html += f'<span class="flag warning">{fl}</span>\n'
+        for fl in f.flags:
+            if fl not in positive_flags and fl not in warning_flags:
+                html += f'<span class="flag">{fl}</span>\n'
+        
+        html += '''
+            </div>
+        </div>
+'''
+    
+    # AI Prompt Section
+    escaped_prompt = analysis.ai_prompt.replace('`', '\\`').replace('${', '\\${')
+    html += f'''
+        <!-- AI Prompt Section -->
+        <div class="prompt-section">
+            <button class="prompt-toggle" onclick="togglePrompt()">
+                <span>🤖</span> View AI Analysis Prompt
+            </button>
+            <div class="prompt-content" id="promptContent">
+                <div class="prompt-header">
+                    <span style="color: var(--purple); font-weight: 600;">📋 Copy this prompt to ChatGPT/Claude for deeper analysis</span>
+                    <button class="copy-btn" onclick="copyPrompt()">📋 Copy Prompt</button>
+                </div>
+                <div class="prompt-text" id="promptText">{analysis.ai_prompt}</div>
+            </div>
+        </div>
+        
+        <!-- Footer -->
+        <footer>
+            <p>Generated by Be Richer Stock Screener</p>
+            <p>{analysis.analysis_date}</p>
+            <p style="margin-top: 10px; font-size: 0.75rem;">
+                Disclaimer: This is not financial advice. Always do your own research before investing.
+            </p>
+        </footer>
+    </div>
+    
+    <script>
+        function togglePrompt() {{
+            const content = document.getElementById('promptContent');
+            content.classList.toggle('show');
+        }}
+        
+        function copyPrompt() {{
+            const text = document.getElementById('promptText').innerText;
+            navigator.clipboard.writeText(text).then(() => {{
+                const btn = document.querySelector('.copy-btn');
+                btn.textContent = '✓ Copied!';
+                btn.classList.add('copied');
+                setTimeout(() => {{
+                    btn.textContent = '📋 Copy Prompt';
+                    btn.classList.remove('copied');
+                }}, 2000);
+            }});
+        }}
+    </script>
+</body>
+</html>
+'''
+    
+    return html
+
+
+def save_analysis(analysis: StockAnalysis, output_dir: str | Path | None = None) -> dict[str, Path]:
+    """
+    Save analysis outputs to files.
+    
+    Returns dict with paths: {"report": path, "prompt": path, "json": path}
+    """
+    if output_dir is None:
+        output_dir = Path("results")
+    else:
+        output_dir = Path(output_dir)
+    
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    # Generate filenames
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    base_name = f"{analysis.ticker.replace('.', '_')}_{timestamp}"
+    
+    paths = {}
+    
+    # Generate and save HTML report
+    html_report = _generate_html_report(analysis)
+    report_path = output_dir / f"{base_name}_report.html"
+    with open(report_path, "w", encoding="utf-8") as file:
+        file.write(html_report)
+    paths["report"] = report_path
+    
+    # Save AI prompt
+    prompt_path = output_dir / f"{base_name}_ai_prompt.txt"
+    with open(prompt_path, "w", encoding="utf-8") as file:
+        file.write(analysis.ai_prompt)
+    paths["prompt"] = prompt_path
+    
+    # Save JSON data
+    json_path = output_dir / f"{base_name}_data.json"
+    json_data = {
+        "ticker": analysis.ticker,
+        "name": analysis.name,
+        "analysis_date": analysis.analysis_date,
+        "summary": analysis.summary,
+        "fundamental_score": {
+            "total": analysis.fund_score.total,
+            "max": analysis.fund_score.max_score,
+            "breakdown": analysis.fund_score.breakdown,
+        },
+        "technical_score": {
+            "total": analysis.tech_score.total,
+            "max": 25,
+            "status": analysis.tech_score.status,
+        },
+        "classification": analysis.classification,
+        "recommendation": analysis.recommendation,
+    }
+    with open(json_path, "w", encoding="utf-8") as json_file:
+        json.dump(json_data, json_file, indent=2, default=str)
+    paths["json"] = json_path
+    
+    return paths
