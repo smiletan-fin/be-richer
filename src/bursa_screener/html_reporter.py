@@ -17,6 +17,13 @@ from pathlib import Path
 
 from .ranker import StockResult
 
+# News fetcher integration
+try:
+    from . import news_fetcher
+    NEWS_AVAILABLE = True
+except ImportError:
+    NEWS_AVAILABLE = False
+
 
 def _get_class_color(classification: str) -> tuple[str, str]:
     """Return (background, text) colors for classification."""
@@ -184,12 +191,17 @@ def _get_score_gauge_html(score: int, max_score: int, label: str, color: str) ->
     '''
 
 
-def _generate_llm_prompt(r: StockResult, report_date: str) -> str:
+def _generate_llm_prompt(r: StockResult, report_date: str, news_data: dict | None = None) -> str:
     """
     Generate a comprehensive, industry-standard LLM prompt for deep stock analysis.
     
-    Includes ALL available data from yfinance, KLSE Screener, and analyst consensus.
+    Includes ALL available data from yfinance, KLSE Screener, analyst consensus, and recent news.
     Structured for professional investment analysis with clear sections and context.
+    
+    Args:
+        r: StockResult object with fundamental and technical data
+        report_date: Date string for the report
+        news_data: Optional dict from news_fetcher.fetch_all_news() containing recent news
     """
     # ═══════════════════════════════════════════════════════════════════════════
     # SECTION 1: BASIC COMPANY INFORMATION
@@ -437,6 +449,13 @@ def _generate_llm_prompt(r: StockResult, report_date: str) -> str:
             flags_section += "\n\n**ℹ️ Notes:**\n" + "\n".join([f"- {f}" for f in neutral_flags])
     
     # ═══════════════════════════════════════════════════════════════════════════
+    # SECTION 8: RECENT NEWS (if available)
+    # ═══════════════════════════════════════════════════════════════════════════
+    news_section = ""
+    if news_data and NEWS_AVAILABLE:
+        news_section = news_fetcher.format_news_for_prompt(news_data, max_items=10)
+    
+    # ═══════════════════════════════════════════════════════════════════════════
     # BUILD THE COMPLETE PROMPT
     # ═══════════════════════════════════════════════════════════════════════════
     prompt = f"""You are a professional equity research analyst. Analyze this Malaysian stock using the comprehensive data provided below and produce a detailed investment analysis report.
@@ -562,6 +581,7 @@ STOCK ANALYSIS REQUEST
 {institutional_section}
 {analyst_section}
 {flags_section}
+{news_section}
 
 ---
 
@@ -630,7 +650,7 @@ List 3-5 specific questions the investor should investigate before making a deci
 
 ---
 
-**Note:** This analysis is based on quantitative data only. The AI should acknowledge limitations and recommend additional qualitative research (management quality, competitive position, industry trends, recent news).
+**Note:** This analysis is based on quantitative data and recent news. The AI should acknowledge limitations and recommend additional qualitative research (management quality, competitive position, industry trends).
 """
 
     return prompt
@@ -1611,7 +1631,7 @@ def generate_html_report(
 '''
 
     # Generate stock cards for each category
-    def _generate_stock_card(r: StockResult, show_detail: bool = True) -> str:
+    def _generate_stock_card(r: StockResult, show_detail: bool = True, news_data: dict | None = None) -> str:
         verdict = _get_verdict_text(r)
         cls_lower = r.classification.lower().replace(" ", "-").replace("to-", "")
         badge_class = {
@@ -1831,7 +1851,7 @@ def generate_html_report(
                             </button>
                         </div>
                     </div>
-                    <div class="llm-prompt-text" id="prompt-text-{r.ticker.replace('.', '_')}">{_escape_html(_generate_llm_prompt(r, ts.strftime("%Y-%m-%d")))}</div>
+                    <div class="llm-prompt-text" id="prompt-text-{r.ticker.replace('.', '_')}">{_escape_html(_generate_llm_prompt(r, ts.strftime("%Y-%m-%d"), news_data))}</div>
                     <div class="llm-tips">
                         <strong>💡 Tip:</strong> Paste this prompt into ChatGPT, Claude, Gemini, or any AI assistant for a detailed investment analysis. 
                         The AI will analyze fundamentals, valuation, technicals, and provide actionable recommendations.
@@ -1843,6 +1863,25 @@ def generate_html_report(
         return card_html
 
     # Ready to Buy section
+    # ═══════════════════════════════════════════════════════════════════════════
+    # NEWS FETCHING - Fetch news for non-REJECT stocks to include in AI prompts
+    # Only fetch for Ready to Buy, Early Re-Rating, and Watchlist to minimize API calls
+    # ═══════════════════════════════════════════════════════════════════════════
+    news_cache: dict[str, dict] = {}  # Cache news data by ticker
+    
+    def _get_news_for_stock(ticker: str) -> dict | None:
+        """Fetch and cache news for a stock."""
+        if not NEWS_AVAILABLE:
+            return None
+        if ticker in news_cache:
+            return news_cache[ticker]
+        try:
+            news_data = news_fetcher.fetch_all_news(ticker, use_cache=True)
+            news_cache[ticker] = news_data
+            return news_data
+        except Exception:
+            return None
+    
     if ready:
         html += f'''
         <section class="stock-section">
@@ -1854,7 +1893,8 @@ def generate_html_report(
 '''
         # Show first 5 cards
         for r in ready[:5]:
-            html += _generate_stock_card(r)
+            stock_news = _get_news_for_stock(r.ticker)
+            html += _generate_stock_card(r, news_data=stock_news)
         
         # If more than 5, add expandable section
         if len(ready) > 5:
@@ -1863,7 +1903,8 @@ def generate_html_report(
             <div class="expandable-section" id="ready-expanded" style="display: none;">
 '''
             for r in ready[5:]:
-                html += _generate_stock_card(r)
+                stock_news = _get_news_for_stock(r.ticker)
+                html += _generate_stock_card(r, news_data=stock_news)
             html += '''
             </div>
             <button class="expand-btn" onclick="toggleExpandSection('ready-expanded', this)">
@@ -1887,7 +1928,8 @@ def generate_html_report(
 '''
         # Show first 5 cards
         for r in early[:5]:
-            html += _generate_stock_card(r)
+            stock_news = _get_news_for_stock(r.ticker)
+            html += _generate_stock_card(r, news_data=stock_news)
         
         # If more than 5, add expandable section
         if len(early) > 5:
@@ -1896,7 +1938,8 @@ def generate_html_report(
             <div class="expandable-section" id="early-expanded" style="display: none;">
 '''
             for r in early[5:]:
-                html += _generate_stock_card(r)
+                stock_news = _get_news_for_stock(r.ticker)
+                html += _generate_stock_card(r, news_data=stock_news)
             html += '''
             </div>
             <button class="expand-btn" onclick="toggleExpandSection('early-expanded', this)">
@@ -1920,7 +1963,8 @@ def generate_html_report(
 '''
         # Show first 3 cards
         for r in watchlist[:3]:
-            html += _generate_stock_card(r)
+            stock_news = _get_news_for_stock(r.ticker)
+            html += _generate_stock_card(r, news_data=stock_news)
         
         # If more than 3, add expandable section
         if len(watchlist) > 3:
@@ -1929,7 +1973,8 @@ def generate_html_report(
             <div class="expandable-section" id="watchlist-expanded" style="display: none;">
 '''
             for r in watchlist[3:]:
-                html += _generate_stock_card(r)
+                stock_news = _get_news_for_stock(r.ticker)
+                html += _generate_stock_card(r, news_data=stock_news)
             html += '''
             </div>
             <button class="expand-btn" onclick="toggleExpandSection('watchlist-expanded', this)">
