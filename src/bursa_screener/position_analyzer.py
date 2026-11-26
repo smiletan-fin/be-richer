@@ -49,6 +49,13 @@ try:
 except ImportError:
     NEWS_AVAILABLE = False
 
+# i3investor integration
+try:
+    from . import i3investor_fetcher
+    I3_AVAILABLE = True
+except ImportError:
+    I3_AVAILABLE = False
+
 console = Console()
 
 
@@ -120,6 +127,7 @@ class PositionAnalysis:
     fundamentals: dict[str, Any] = field(default_factory=dict)
     klse_data: dict[str, Any] | None = None
     news_data: dict[str, Any] | None = None
+    i3_sentiment: Any | None = None  # i3investor sentiment data
     
     # Generated content
     ai_prompt: str = ""
@@ -559,6 +567,13 @@ def analyze_position(
     if NEWS_AVAILABLE:
         news_data = news_fetcher.fetch_all_news(ticker, use_cache=use_cache)
     
+    # i3investor sentiment (Malaysian stocks only)
+    i3_sentiment = None
+    if I3_AVAILABLE and ticker.upper().endswith(".KL"):
+        if verbose:
+            console.print("[dim]Fetching i3investor sentiment...[/dim]")
+        i3_sentiment = i3investor_fetcher.fetch_i3investor_sentiment(ticker)
+    
     # ── Calculate scores ──────────────────────────────────────────────────────
     if verbose:
         console.print("[dim]Calculating scores...[/dim]")
@@ -618,6 +633,7 @@ def analyze_position(
         fundamentals=fundamentals,
         klse_data=klse_data,
         news_data=news_data,
+        i3_sentiment=i3_sentiment,
     )
     
     # ── Generate AI prompt ────────────────────────────────────────────────────
@@ -723,6 +739,15 @@ def _generate_position_ai_prompt(analysis: PositionAnalysis) -> str:
     news_section = ""
     if NEWS_AVAILABLE and a.news_data and a.news_data.get("news"):
         news_section = news_fetcher.format_news_for_prompt(a.news_data, max_items=8)
+    
+    # Format i3investor section
+    i3_section = ""
+    if I3_AVAILABLE and a.i3_sentiment:
+        i3_section = i3investor_fetcher.format_i3_for_prompt(a.i3_sentiment, limit=10)
+        # Add sentiment score
+        i3_score = i3investor_fetcher.get_i3_sentiment_score(a.i3_sentiment)
+        i3_section += f"\n**Sentiment Score:** {i3_score['score']}/10 ({i3_score['signal']})\n"
+        i3_section += f"**Details:** {i3_score['details']}\n"
     
     # Build quarterly section if KLSE data available
     quarterly_section = ""
@@ -875,6 +900,7 @@ def _generate_position_ai_prompt(analysis: PositionAnalysis) -> str:
 
 ---
 {news_section}
+{i3_section}
 ---
 
 ## ANALYSIS REQUEST

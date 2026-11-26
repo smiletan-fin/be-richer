@@ -55,6 +55,13 @@ try:
 except ImportError:
     KLSE_AVAILABLE = False
 
+# i3investor integration (Malaysian market sentiment)
+try:
+    from . import i3investor_fetcher
+    I3_AVAILABLE = True
+except ImportError:
+    I3_AVAILABLE = False
+
 # FMP integration (optional enhancement for US stocks)
 try:
     from . import fmp_fetcher
@@ -222,6 +229,9 @@ class FundamentalScore:
     score_earnings_consistency: int = 0  # max 3 (KLSE consecutive growth)
     score_institutional_flow:   int = 0  # max 3 (KLSE shareholding)
     score_insider_trading:      int = 0  # max 3 (KLSE director trades)
+    
+    # i3investor sentiment score (Malaysian stocks)
+    score_i3_sentiment:         int = 0  # max 3 (i3investor community sentiment)
 
     # display values
     pe_ttm:       float | None = None
@@ -241,6 +251,7 @@ class FundamentalScore:
     has_fmp_data: bool = False    # FMP earnings surprise (US stocks)
     has_klse_data: bool = False   # KLSE Screener data (Malaysian stocks)
     has_analyst_data: bool = False  # Analyst target prices available
+    has_i3_data: bool = False     # i3investor sentiment data available
     earnings_beats: int | None = None  # Number of recent beats (out of 4)
     
     # KLSE quarterly data
@@ -278,6 +289,7 @@ class FundamentalScore:
             + self.score_earnings_surprise + self.score_analyst_target
             + self.score_earnings_momentum + self.score_earnings_consistency
             + self.score_institutional_flow + self.score_insider_trading
+            + self.score_i3_sentiment
         )
 
     @property
@@ -288,6 +300,8 @@ class FundamentalScore:
             base += 5   # +5 analyst target prices
         if self.has_klse_data:
             base += 14  # +5 momentum, +3 consistency, +3 institutional, +3 insider
+        if self.has_i3_data:
+            base += 3   # +3 i3investor sentiment
         if self.has_fmp_data:
             base += 5   # +5 earnings surprise (rarely both)
         return base
@@ -313,6 +327,8 @@ class FundamentalScore:
                 f"  Inst={self.score_institutional_flow}/3"
                 f"  Dir={self.score_insider_trading}/3"
             )
+        if self.has_i3_data:
+            base += f"  i3={self.score_i3_sentiment}/3"
         if self.has_fmp_data:
             base += f"  ES={self.score_earnings_surprise}/5"
         return base
@@ -320,7 +336,7 @@ class FundamentalScore:
 
 # ── scorer ────────────────────────────────────────────────────────────────────
 
-def score_fundamentals(ticker: str, info: dict[str, Any], fmp_data: dict[str, Any] | None = None, klse_data: dict[str, Any] | None = None) -> FundamentalScore:
+def score_fundamentals(ticker: str, info: dict[str, Any], fmp_data: dict[str, Any] | None = None, klse_data: dict[str, Any] | None = None, i3_data: dict[str, Any] | None = None) -> FundamentalScore:
     result = FundamentalScore(ticker=ticker)
 
     if not info or all(v is None for k, v in info.items() if k not in ("ticker",)):
@@ -743,5 +759,31 @@ def score_fundamentals(ticker: str, info: dict[str, Any], fmp_data: dict[str, An
         shareholding = klse_data.get("shareholding")
         if shareholding:
             result._raw_shareholding = shareholding
+
+    # ── O. i3investor Sentiment Score (max 3, Malaysian stocks) ───────────────
+    # Score based on community sentiment from i3investor forum
+    if i3_data:
+        result.has_i3_data = True
+        
+        # i3_data should be a dict with 'score', 'signal', and 'details' from get_i3_sentiment_score()
+        i3_score = i3_data.get("score", 5)  # Default neutral score of 5
+        i3_signal = i3_data.get("signal", "NEUTRAL")
+        i3_details = i3_data.get("details", "")
+        
+        # Convert 0-10 score to 0-3 points
+        # Score >= 7 (BULLISH): 3 points
+        # Score 5-6.9 (NEUTRAL): 1-2 points  
+        # Score < 5 (BEARISH): 0 points
+        if i3_score >= 7:
+            result.score_i3_sentiment = 3
+            result.flags.append(f"🔥 i3investor: {i3_signal} sentiment (score: {i3_score}/10)")
+        elif i3_score >= 6:
+            result.score_i3_sentiment = 2
+        elif i3_score >= 5:
+            result.score_i3_sentiment = 1
+        else:
+            result.score_i3_sentiment = 0
+            if i3_score <= 3:
+                result.flags.append(f"⚠ i3investor: {i3_signal} sentiment (score: {i3_score}/10)")
 
     return result

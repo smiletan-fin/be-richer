@@ -24,6 +24,13 @@ try:
 except ImportError:
     NEWS_AVAILABLE = False
 
+# i3investor integration
+try:
+    from . import i3investor_fetcher
+    I3_AVAILABLE = True
+except ImportError:
+    I3_AVAILABLE = False
+
 
 def _get_class_color(classification: str) -> tuple[str, str]:
     """Return (background, text) colors for classification."""
@@ -191,17 +198,18 @@ def _get_score_gauge_html(score: int, max_score: int, label: str, color: str) ->
     '''
 
 
-def _generate_llm_prompt(r: StockResult, report_date: str, news_data: dict | None = None) -> str:
+def _generate_llm_prompt(r: StockResult, report_date: str, news_data: dict | None = None, i3_sentiment = None) -> str:
     """
     Generate a comprehensive, industry-standard LLM prompt for deep stock analysis.
     
-    Includes ALL available data from yfinance, KLSE Screener, analyst consensus, and recent news.
+    Includes ALL available data from yfinance, KLSE Screener, analyst consensus, i3investor, and recent news.
     Structured for professional investment analysis with clear sections and context.
     
     Args:
         r: StockResult object with fundamental and technical data
         report_date: Date string for the report
         news_data: Optional dict from news_fetcher.fetch_all_news() containing recent news
+        i3_sentiment: Optional I3Sentiment from i3investor_fetcher
     """
     # ═══════════════════════════════════════════════════════════════════════════
     # SECTION 1: BASIC COMPANY INFORMATION
@@ -456,6 +464,16 @@ def _generate_llm_prompt(r: StockResult, report_date: str, news_data: dict | Non
         news_section = news_fetcher.format_news_for_prompt(news_data, max_items=10)
     
     # ═══════════════════════════════════════════════════════════════════════════
+    # SECTION 9: i3investor SENTIMENT (Malaysian stocks)
+    # ═══════════════════════════════════════════════════════════════════════════
+    i3_section = ""
+    if i3_sentiment and I3_AVAILABLE:
+        i3_section = i3investor_fetcher.format_i3_for_prompt(i3_sentiment, limit=8)
+        i3_score = i3investor_fetcher.get_i3_sentiment_score(i3_sentiment)
+        i3_section += f"\n**Community Sentiment Score:** {i3_score['score']}/10 ({i3_score['signal']})\n"
+        i3_section += f"**Details:** {i3_score['details']}\n"
+    
+    # ═══════════════════════════════════════════════════════════════════════════
     # BUILD THE COMPLETE PROMPT
     # ═══════════════════════════════════════════════════════════════════════════
     prompt = f"""You are a professional equity research analyst. Analyze this Malaysian stock using the comprehensive data provided below and produce a detailed investment analysis report.
@@ -582,6 +600,7 @@ STOCK ANALYSIS REQUEST
 {analyst_section}
 {flags_section}
 {news_section}
+{i3_section}
 
 ---
 
@@ -1631,7 +1650,7 @@ def generate_html_report(
 '''
 
     # Generate stock cards for each category
-    def _generate_stock_card(r: StockResult, show_detail: bool = True, news_data: dict | None = None) -> str:
+    def _generate_stock_card(r: StockResult, show_detail: bool = True, news_data: dict | None = None, i3_sentiment = None) -> str:
         verdict = _get_verdict_text(r)
         cls_lower = r.classification.lower().replace(" ", "-").replace("to-", "")
         badge_class = {
@@ -1851,7 +1870,7 @@ def generate_html_report(
                             </button>
                         </div>
                     </div>
-                    <div class="llm-prompt-text" id="prompt-text-{r.ticker.replace('.', '_')}">{_escape_html(_generate_llm_prompt(r, ts.strftime("%Y-%m-%d"), news_data))}</div>
+                    <div class="llm-prompt-text" id="prompt-text-{r.ticker.replace('.', '_')}">{_escape_html(_generate_llm_prompt(r, ts.strftime("%Y-%m-%d"), news_data, i3_sentiment))}</div>
                     <div class="llm-tips">
                         <strong>💡 Tip:</strong> Paste this prompt into ChatGPT, Claude, Gemini, or any AI assistant for a detailed investment analysis. 
                         The AI will analyze fundamentals, valuation, technicals, and provide actionable recommendations.
@@ -1868,6 +1887,7 @@ def generate_html_report(
     # Only fetch for Ready to Buy, Early Re-Rating, and Watchlist to minimize API calls
     # ═══════════════════════════════════════════════════════════════════════════
     news_cache: dict[str, dict] = {}  # Cache news data by ticker
+    i3_cache: dict = {}  # Cache i3investor data by ticker
     
     def _get_news_for_stock(ticker: str) -> dict | None:
         """Fetch and cache news for a stock."""
@@ -1879,6 +1899,19 @@ def generate_html_report(
             news_data = news_fetcher.fetch_all_news(ticker, use_cache=True)
             news_cache[ticker] = news_data
             return news_data
+        except Exception:
+            return None
+    
+    def _get_i3_for_stock(ticker: str):
+        """Fetch and cache i3investor sentiment for a stock."""
+        if not I3_AVAILABLE:
+            return None
+        if ticker in i3_cache:
+            return i3_cache[ticker]
+        try:
+            i3_data = i3investor_fetcher.fetch_i3investor_sentiment(ticker)
+            i3_cache[ticker] = i3_data
+            return i3_data
         except Exception:
             return None
     
@@ -1894,7 +1927,8 @@ def generate_html_report(
         # Show first 5 cards
         for r in ready[:5]:
             stock_news = _get_news_for_stock(r.ticker)
-            html += _generate_stock_card(r, news_data=stock_news)
+            stock_i3 = _get_i3_for_stock(r.ticker)
+            html += _generate_stock_card(r, news_data=stock_news, i3_sentiment=stock_i3)
         
         # If more than 5, add expandable section
         if len(ready) > 5:
@@ -1904,7 +1938,8 @@ def generate_html_report(
 '''
             for r in ready[5:]:
                 stock_news = _get_news_for_stock(r.ticker)
-                html += _generate_stock_card(r, news_data=stock_news)
+                stock_i3 = _get_i3_for_stock(r.ticker)
+                html += _generate_stock_card(r, news_data=stock_news, i3_sentiment=stock_i3)
             html += '''
             </div>
             <button class="expand-btn" onclick="toggleExpandSection('ready-expanded', this)">
@@ -1929,7 +1964,8 @@ def generate_html_report(
         # Show first 5 cards
         for r in early[:5]:
             stock_news = _get_news_for_stock(r.ticker)
-            html += _generate_stock_card(r, news_data=stock_news)
+            stock_i3 = _get_i3_for_stock(r.ticker)
+            html += _generate_stock_card(r, news_data=stock_news, i3_sentiment=stock_i3)
         
         # If more than 5, add expandable section
         if len(early) > 5:
@@ -1939,7 +1975,8 @@ def generate_html_report(
 '''
             for r in early[5:]:
                 stock_news = _get_news_for_stock(r.ticker)
-                html += _generate_stock_card(r, news_data=stock_news)
+                stock_i3 = _get_i3_for_stock(r.ticker)
+                html += _generate_stock_card(r, news_data=stock_news, i3_sentiment=stock_i3)
             html += '''
             </div>
             <button class="expand-btn" onclick="toggleExpandSection('early-expanded', this)">
@@ -1964,7 +2001,8 @@ def generate_html_report(
         # Show first 3 cards
         for r in watchlist[:3]:
             stock_news = _get_news_for_stock(r.ticker)
-            html += _generate_stock_card(r, news_data=stock_news)
+            stock_i3 = _get_i3_for_stock(r.ticker)
+            html += _generate_stock_card(r, news_data=stock_news, i3_sentiment=stock_i3)
         
         # If more than 3, add expandable section
         if len(watchlist) > 3:
@@ -1974,7 +2012,8 @@ def generate_html_report(
 '''
             for r in watchlist[3:]:
                 stock_news = _get_news_for_stock(r.ticker)
-                html += _generate_stock_card(r, news_data=stock_news)
+                stock_i3 = _get_i3_for_stock(r.ticker)
+                html += _generate_stock_card(r, news_data=stock_news, i3_sentiment=stock_i3)
             html += '''
             </div>
             <button class="expand-btn" onclick="toggleExpandSection('watchlist-expanded', this)">
