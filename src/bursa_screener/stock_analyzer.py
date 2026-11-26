@@ -43,6 +43,13 @@ try:
 except ImportError:
     KLSE_AVAILABLE = False
 
+# News fetcher integration
+try:
+    from . import news_fetcher
+    NEWS_AVAILABLE = True
+except ImportError:
+    NEWS_AVAILABLE = False
+
 console = Console()
 
 
@@ -66,6 +73,9 @@ class StockAnalysis:
     fund_score: FundamentalScore
     tech_score: TechnicalScore
     result: StockResult
+    
+    # Optional data (must come after required fields)
+    news_data: dict[str, Any] | None = None  # News from KLSE + Yahoo
     
     # Generated content
     report_markdown: str = ""
@@ -151,7 +161,16 @@ def analyze_stock(
         if klse_data.get("has_klse_data") and verbose:
             console.print("[green]✓ KLSE quarterly data available[/green]")
     
-    # ── Step 4: Score the stock ───────────────────────────────────────────────
+    # ── Step 4: Fetch news ────────────────────────────────────────────────────
+    news_data = None
+    if NEWS_AVAILABLE:
+        if verbose:
+            console.print("[dim]Fetching recent news...[/dim]")
+        news_data = news_fetcher.fetch_all_news(ticker, use_cache=use_cache)
+        if news_data and news_data.get("total_count", 0) > 0 and verbose:
+            console.print(f"[green]✓ Found {news_data['total_count']} news articles[/green]")
+    
+    # ── Step 5: Score the stock ───────────────────────────────────────────────
     if verbose:
         console.print("[dim]Calculating scores...[/dim]")
     
@@ -166,7 +185,7 @@ def analyze_stock(
         tech=tech_score,
     )
     
-    # ── Step 5: Create analysis object ────────────────────────────────────────
+    # ── Step 6: Create analysis object ────────────────────────────────────────
     analysis = StockAnalysis(
         ticker=ticker,
         name=fundamentals.get("long_name"),
@@ -174,15 +193,16 @@ def analyze_stock(
         fundamentals=fundamentals,
         price_data_available=price_data_available,
         klse_data=klse_data,
+        news_data=news_data,
         fund_score=fund_score,
         tech_score=tech_score,
         result=result,
     )
     
-    # ── Step 6: Generate summary ──────────────────────────────────────────────
+    # ── Step 7: Generate summary ──────────────────────────────────────────────
     analysis.summary = _generate_summary(analysis)
     
-    # ── Step 7: Generate report and prompt ────────────────────────────────────
+    # ── Step 8: Generate report and prompt ────────────────────────────────────
     if verbose:
         console.print("[dim]Generating analysis report...[/dim]")
     
@@ -930,6 +950,10 @@ PATTERN RECOGNITION:
             prompt += "\nℹ️  NOTES:\n"
             for fl in other:
                 prompt += f"   • {fl}\n"
+
+    # News section
+    if NEWS_AVAILABLE and analysis.news_data:
+        prompt += news_fetcher.format_news_for_prompt(analysis.news_data, max_items=10)
 
     # Analysis instructions
     prompt += """
@@ -1713,6 +1737,10 @@ def _generate_html_report(analysis: StockAnalysis) -> str:
             </div>
         </div>
 '''
+    
+    # News section
+    if NEWS_AVAILABLE and analysis.news_data and analysis.news_data.get("news"):
+        html += news_fetcher.format_news_for_html(analysis.news_data, max_items=5)
     
     # AI Prompt Section
     escaped_prompt = analysis.ai_prompt.replace('`', '\\`').replace('${', '\\${')
