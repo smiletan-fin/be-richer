@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       sector:
-        description: 'Which sector to scan'
+        description: 'Sector to scan (all-sectors runs parallel jobs for each sector)'
         required: true
         type: choice
         options:
@@ -23,16 +23,16 @@ on:
           - telecommunications
           - transportation
       tier:
-        description: 'Stock universe tier'
+        description: 'Stock universe: klci=30 blue chips, broad=~45 stocks, full=all listed stocks'
         required: false
-        default: 'klci'
+        default: 'full'
         type: choice
         options:
-          - klci
-          - broad
           - full
+          - broad
+          - klci
       show_rejected:
-        description: 'Include rejected stocks'
+        description: 'Include stocks that failed screening criteria'
         required: false
         default: false
         type: boolean
