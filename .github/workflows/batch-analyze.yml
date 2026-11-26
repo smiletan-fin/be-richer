@@ -1,0 +1,256 @@
+name: Batch Stock Analysis
+
+on:
+  workflow_dispatch:
+    inputs:
+      tickers:
+        description: 'Comma-separated list of tickers (e.g., 1155.KL,1295.KL,5347.KL or MAYBANK,CIMB,TENAGA)'
+        required: true
+        type: string
+      max_parallel:
+        description: 'Maximum parallel analyses (to avoid rate limiting)'
+        required: false
+        default: '2'
+        type: choice
+        options:
+          - '1'
+          - '2'
+          - '3'
+      use_cache:
+        description: 'Use cached data'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  prepare:
+    name: 📋 Prepare Analysis Queue
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.set-matrix.outputs.matrix }}
+      ticker_count: ${{ steps.set-matrix.outputs.ticker_count }}
+    
+    steps:
+      - name: Parse Tickers
+        id: set-matrix
+        run: |
+          # Parse comma-separated tickers into JSON array
+          TICKERS="${{ inputs.tickers }}"
+          
+          # Remove spaces and convert to JSON array
+          TICKER_ARRAY=$(echo "$TICKERS" | tr ',' '\n' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | jq -R -s -c 'split("\n") | map(select(length > 0))')
+          TICKER_COUNT=$(echo "$TICKER_ARRAY" | jq 'length')
+          
+          echo "Parsed tickers: $TICKER_ARRAY"
+          echo "Count: $TICKER_COUNT"
+          
+          # Create matrix format
+          MATRIX=$(echo "$TICKER_ARRAY" | jq -c '{ticker: .}')
+          
+          echo "matrix=$MATRIX" >> $GITHUB_OUTPUT
+          echo "ticker_count=$TICKER_COUNT" >> $GITHUB_OUTPUT
+
+      - name: Summary
+        run: |
+          echo "## 📋 Batch Analysis Queue" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Tickers to analyze:** ${{ steps.set-matrix.outputs.ticker_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Max parallel:** ${{ inputs.max_parallel }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Use cache:** ${{ inputs.use_cache }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Tickers:" >> $GITHUB_STEP_SUMMARY
+          echo "${{ inputs.tickers }}" | tr ',' '\n' | while read ticker; do
+            echo "- \`$ticker\`" >> $GITHUB_STEP_SUMMARY
+          done
+
+  analyze:
+    name: 📊 ${{ matrix.ticker }}
+    needs: prepare
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: ${{ fromJson(needs.prepare.outputs.matrix) }}
+      fail-fast: false
+      max-parallel: ${{ fromJson(inputs.max_parallel) }}
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Analyze ${{ matrix.ticker }}
+        id: analyze
+        run: |
+          mkdir -p results
+          
+          CACHE_FLAG=""
+          if [ "${{ inputs.use_cache }}" = "false" ]; then
+            CACHE_FLAG="--no-cache"
+          fi
+          
+          # Run analysis
+          python -m bursa_screener --analyze "${{ matrix.ticker }}" --output results $CACHE_FLAG
+          
+          # Find files
+          JSON_FILE=$(find results -name "*_data.json" -type f | head -1)
+          
+          if [ -f "$JSON_FILE" ]; then
+            echo "json_file=$JSON_FILE" >> $GITHUB_OUTPUT
+            echo "status=success" >> $GITHUB_OUTPUT
+          else
+            echo "status=failed" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Extract Summary
+        if: steps.analyze.outputs.status == 'success'
+        id: summary
+        run: |
+          python3 << 'EOF'
+          import json
+          import os
+          
+          json_file = "${{ steps.analyze.outputs.json_file }}"
+          
+          try:
+              with open(json_file, "r") as f:
+                  data = json.load(f)
+              
+              with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+                  f.write(f"ticker={data.get('ticker', 'N/A')}\n")
+                  f.write(f"name={data.get('name', 'N/A')}\n")
+                  f.write(f"recommendation={data.get('recommendation', 'N/A')}\n")
+                  f.write(f"classification={data.get('classification', 'N/A')}\n")
+                  
+                  fund = data.get('fundamental_score', {})
+                  tech = data.get('technical_score', {})
+                  f.write(f"fund_score={fund.get('total', '?')}/{fund.get('max', '?')}\n")
+                  f.write(f"tech_score={tech.get('total', '?')}/{tech.get('max', '?')}\n")
+                  
+                  summary = data.get('summary', {})
+                  f.write(f"risk={summary.get('risk_level', 'N/A')}\n")
+          except Exception as e:
+              print(f"Error: {e}")
+          EOF
+
+      - name: Upload Results
+        uses: actions/upload-artifact@v4
+        with:
+          name: analysis-${{ matrix.ticker }}
+          path: results/
+          if-no-files-found: warn
+          retention-days: 60
+
+      - name: Job Summary
+        run: |
+          if [ "${{ steps.analyze.outputs.status }}" = "success" ]; then
+            echo "### ✅ ${{ matrix.ticker }} - ${{ steps.summary.outputs.name }}" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Metric | Value |" >> $GITHUB_STEP_SUMMARY
+            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
+            echo "| Recommendation | **${{ steps.summary.outputs.recommendation }}** |" >> $GITHUB_STEP_SUMMARY
+            echo "| Classification | ${{ steps.summary.outputs.classification }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Fundamental | ${{ steps.summary.outputs.fund_score }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Technical | ${{ steps.summary.outputs.tech_score }} |" >> $GITHUB_STEP_SUMMARY
+            echo "| Risk | ${{ steps.summary.outputs.risk }} |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### ❌ ${{ matrix.ticker }} - Analysis Failed" >> $GITHUB_STEP_SUMMARY
+          fi
+
+  summary:
+    name: 📋 Consolidated Summary
+    needs: [prepare, analyze]
+    runs-on: ubuntu-latest
+    if: always()
+    
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-analyses
+
+      - name: Create Consolidated Report
+        run: |
+          echo "# 📊 Batch Stock Analysis Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Total Stocks Analyzed:** ${{ needs.prepare.outputs.ticker_count }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Run:** #${{ github.run_number }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Date:** $(date '+%Y-%m-%d %H:%M UTC')" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📈 Analysis Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Ticker | Company | Recommendation | Classification | Fund Score | Tech Score | Risk |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|---------|----------------|----------------|------------|------------|------|" >> $GITHUB_STEP_SUMMARY
+          
+          # Process each analysis result
+          for dir in all-analyses/analysis-*/; do
+            if [ -d "$dir" ]; then
+              JSON_FILE=$(find "$dir" -name "*_data.json" -type f | head -1)
+              
+              if [ -f "$JSON_FILE" ]; then
+                # Extract data using Python
+                python3 << EOF
+          import json
+          
+          with open("$JSON_FILE", "r") as f:
+              data = json.load(f)
+          
+          ticker = data.get('ticker', 'N/A')
+          name = (data.get('name') or 'N/A')[:20]
+          rec = data.get('recommendation', 'N/A')
+          cls = data.get('classification', 'N/A')
+          fund = data.get('fundamental_score', {})
+          tech = data.get('technical_score', {})
+          fund_str = f"{fund.get('total', '?')}/{fund.get('max', '?')}"
+          tech_str = f"{tech.get('total', '?')}/{tech.get('max', '?')}"
+          risk = data.get('summary', {}).get('risk_level', 'N/A')
+          
+          # Emoji for recommendation
+          emoji = {'STRONG BUY': '🟢', 'BUY': '🟢', 'ACCUMULATE': '🟡', 'HOLD': '🔵', 'AVOID': '🔴'}.get(rec.split()[0] if rec else '', '⚪')
+          
+          print(f"| {ticker} | {name} | {emoji} {rec} | {cls} | {fund_str} | {tech_str} | {risk} |")
+          EOF
+              fi
+            fi
+          done >> $GITHUB_STEP_SUMMARY
+          
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📁 Download Reports" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Individual analysis reports are available in the **Artifacts** section below." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Each analysis includes:" >> $GITHUB_STEP_SUMMARY
+          echo "- 📄 Markdown Report (\`*_report.md\`)" >> $GITHUB_STEP_SUMMARY
+          echo "- 🤖 AI Prompt (\`*_ai_prompt.txt\`)" >> $GITHUB_STEP_SUMMARY
+          echo "- 📊 JSON Data (\`*_data.json\`)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "⚠️ *Disclaimer: Automated analysis for educational purposes only.*" >> $GITHUB_STEP_SUMMARY
+
+      - name: Upload Consolidated Package
+        uses: actions/upload-artifact@v4
+        with:
+          name: all-analyses-${{ github.run_number }}
+          path: all-analyses/
+          retention-days: 60

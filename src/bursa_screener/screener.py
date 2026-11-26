@@ -11,10 +11,12 @@ Usage (from project root with venv active):
     python -m bursa_screener --clear-cache  # clear all cached data
     python -m bursa_screener --check  # check Yahoo Finance connectivity
     python -m bursa_screener --cache-stats  # show cache statistics
+    python -m bursa_screener --analyze 1155.KL  # deep analyze a single stock
 
 Or via CLI entry point:
     be-richer --tier broad
     bursa-screener --tier klci
+    be-richer --analyze MAYBANK  # analyze a single stock
 """
 
 from __future__ import annotations
@@ -44,6 +46,13 @@ try:
     KLSE_AVAILABLE = True
 except ImportError:
     KLSE_AVAILABLE = False
+
+# Stock analyzer for single-stock deep analysis
+try:
+    from . import stock_analyzer
+    ANALYZER_AVAILABLE = True
+except ImportError:
+    ANALYZER_AVAILABLE = False
 
 console = Console()
 
@@ -205,6 +214,11 @@ Examples:
   be-richer --clear-cache  # clear all cached data
   be-richer --check  # check Yahoo Finance connectivity
   be-richer --cache-stats  # show cache statistics
+  
+  # Single stock deep analysis:
+  be-richer --analyze 1155.KL  # analyze Maybank
+  be-richer --analyze MAYBANK  # same as above (auto-resolves to 1155.KL)
+  be-richer --analyze CIMB --output ./my-reports  # custom output directory
         """,
     )
     parser.add_argument(
@@ -285,8 +299,51 @@ Examples:
         default=False,
         help="Show cache statistics and exit",
     )
+    parser.add_argument(
+        "--analyze",
+        type=str,
+        metavar="TICKER",
+        help="Deep analyze a single stock (e.g., --analyze 1155.KL or --analyze MAYBANK)",
+    )
+    parser.add_argument(
+        "--output",
+        type=str,
+        metavar="DIR",
+        help="Output directory for analysis files (default: results/)",
+    )
 
     args = parser.parse_args()
+    
+    # Single stock analysis mode
+    if args.analyze:
+        if not ANALYZER_AVAILABLE:
+            console.print("[red]Error: Stock analyzer module not available[/red]")
+            return
+        
+        analysis = stock_analyzer.analyze_stock(
+            args.analyze,
+            use_cache=not args.no_cache,
+            verbose=True,
+        )
+        
+        # Print summary to console
+        stock_analyzer.print_analysis(analysis)
+        
+        # Save outputs
+        output_dir = args.output or "results"
+        paths = stock_analyzer.save_analysis(analysis, output_dir)
+        
+        console.print("\n[bold]📁 Files Generated:[/bold]")
+        console.print(f"  Report:    {paths['report']}")
+        console.print(f"  AI Prompt: {paths['prompt']}")
+        console.print(f"  JSON Data: {paths['json']}")
+        
+        console.print("\n[bold cyan]💡 Next Steps:[/bold cyan]")
+        console.print(f"  1. Read the report: [dim]{paths['report']}[/dim]")
+        console.print(f"  2. Copy the AI prompt to ChatGPT/Claude for deeper analysis")
+        console.print(f"  3. Research recent news and announcements for {args.analyze}")
+        
+        return
     
     # List available sectors
     if args.list_sectors:

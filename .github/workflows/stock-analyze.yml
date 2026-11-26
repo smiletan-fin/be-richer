@@ -1,0 +1,249 @@
+name: Single Stock Deep Analysis
+
+on:
+  workflow_dispatch:
+    inputs:
+      ticker:
+        description: 'Stock ticker to analyze (e.g., 1155.KL, MAYBANK, CIMB)'
+        required: true
+        type: string
+      use_cache:
+        description: 'Use cached data (faster but may be stale)'
+        required: false
+        default: true
+        type: boolean
+
+env:
+  PYTHON_VERSION: '3.11'
+
+jobs:
+  analyze:
+    name: 📊 Analyze ${{ inputs.ticker }}
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-${{ hashFiles('requirements.txt', 'pyproject.toml') }}
+          restore-keys: |
+            pip-${{ runner.os }}-py${{ env.PYTHON_VERSION }}-
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Run Stock Analysis
+        id: analyze
+        run: |
+          mkdir -p results
+          
+          CACHE_FLAG=""
+          if [ "${{ inputs.use_cache }}" = "false" ]; then
+            CACHE_FLAG="--no-cache"
+          fi
+          
+          # Run the analysis
+          python -m bursa_screener --analyze "${{ inputs.ticker }}" --output results $CACHE_FLAG
+          
+          # Find the generated files
+          REPORT_FILE=$(find results -name "*_report.md" -type f | head -1)
+          PROMPT_FILE=$(find results -name "*_ai_prompt.txt" -type f | head -1)
+          JSON_FILE=$(find results -name "*_data.json" -type f | head -1)
+          
+          # Set outputs for later steps
+          echo "report_file=$REPORT_FILE" >> $GITHUB_OUTPUT
+          echo "prompt_file=$PROMPT_FILE" >> $GITHUB_OUTPUT
+          echo "json_file=$JSON_FILE" >> $GITHUB_OUTPUT
+          
+          # Debug: show generated files
+          echo "=== Generated Files ==="
+          ls -la results/
+
+      - name: Extract Analysis Summary
+        id: summary
+        run: |
+          JSON_FILE="${{ steps.analyze.outputs.json_file }}"
+          
+          if [ -f "$JSON_FILE" ]; then
+            # Extract key metrics using Python
+            python3 << 'EOF'
+          import json
+          import os
+          
+          with open("${{ steps.analyze.outputs.json_file }}", "r") as f:
+              data = json.load(f)
+          
+          # Write to GITHUB_OUTPUT
+          with open(os.environ["GITHUB_OUTPUT"], "a") as f:
+              f.write(f"ticker={data.get('ticker', 'N/A')}\n")
+              f.write(f"name={data.get('name', 'N/A')}\n")
+              f.write(f"recommendation={data.get('recommendation', 'N/A')}\n")
+              f.write(f"classification={data.get('classification', 'N/A')}\n")
+              f.write(f"fund_score={data.get('fundamental_score', {}).get('total', 'N/A')}/{data.get('fundamental_score', {}).get('max', 'N/A')}\n")
+              f.write(f"tech_score={data.get('technical_score', {}).get('total', 'N/A')}/{data.get('technical_score', {}).get('max', 'N/A')}\n")
+              
+              summary = data.get('summary', {})
+              f.write(f"risk_level={summary.get('risk_level', 'N/A')}\n")
+              f.write(f"conviction={summary.get('conviction', 'N/A')}\n")
+              
+              # Strengths and weaknesses as comma-separated
+              strengths = ', '.join(summary.get('strengths', [])[:3]) or 'None identified'
+              weaknesses = ', '.join(summary.get('weaknesses', [])[:3]) or 'None identified'
+              f.write(f"strengths={strengths}\n")
+              f.write(f"weaknesses={weaknesses}\n")
+          
+          print("Summary extracted successfully")
+          EOF
+          else
+            echo "ticker=${{ inputs.ticker }}" >> $GITHUB_OUTPUT
+            echo "recommendation=Error" >> $GITHUB_OUTPUT
+            echo "classification=Unknown" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload Analysis Reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.ticker }}-analysis-${{ github.run_number }}
+          path: results/
+          if-no-files-found: warn
+          retention-days: 90
+
+      - name: Create Job Summary
+        run: |
+          cat << 'EOF' >> $GITHUB_STEP_SUMMARY
+          # 📊 Stock Analysis Complete: ${{ steps.summary.outputs.ticker }}
+          
+          **Company:** ${{ steps.summary.outputs.name }}  
+          **Analysis Date:** $(date '+%Y-%m-%d %H:%M UTC')  
+          **Run:** #${{ github.run_number }}
+          
+          ---
+          
+          ## 🎯 Executive Summary
+          
+          | Metric | Value |
+          |--------|-------|
+          | **Recommendation** | **${{ steps.summary.outputs.recommendation }}** |
+          | **Classification** | ${{ steps.summary.outputs.classification }} |
+          | **Fundamental Score** | ${{ steps.summary.outputs.fund_score }} |
+          | **Technical Score** | ${{ steps.summary.outputs.tech_score }} |
+          | **Risk Level** | ${{ steps.summary.outputs.risk_level }} |
+          | **Conviction** | ${{ steps.summary.outputs.conviction }} |
+          
+          ### ✅ Key Strengths
+          ${{ steps.summary.outputs.strengths }}
+          
+          ### ⚠️ Key Concerns
+          ${{ steps.summary.outputs.weaknesses }}
+          
+          ---
+          
+          ## 📁 Generated Files
+          
+          | File | Description |
+          |------|-------------|
+          | `*_report.md` | Full markdown analysis report |
+          | `*_ai_prompt.txt` | AI prompt for ChatGPT/Claude deep analysis |
+          | `*_data.json` | Structured JSON data for programmatic use |
+          
+          ---
+          
+          ## 💡 Next Steps
+          
+          1. **Download the artifacts** from the section below
+          2. **Read the markdown report** (`*_report.md`) for the full analysis
+          3. **Copy the AI prompt** (`*_ai_prompt.txt`) to ChatGPT/Claude for deeper insights
+          4. **Research recent news** about ${{ steps.summary.outputs.ticker }}
+          5. **Compare with peers** in the same sector
+          
+          ---
+          
+          ## 🤖 AI Prompt Preview
+          
+          The AI prompt file contains a comprehensive data package for use with any AI assistant.
+          It includes:
+          - All fundamental metrics with interpretations
+          - Technical indicators and trend analysis
+          - KLSE quarterly data (for Malaysian stocks)
+          - Institutional and insider activity
+          - Structured analysis framework with 10 sections
+          - Specific output format requirements
+          
+          **To use:** Copy the contents of `*_ai_prompt.txt` and paste into ChatGPT, Claude, Gemini, or any AI assistant.
+          
+          ---
+          
+          ⚠️ *Disclaimer: This is an automated analysis tool. Always do your own research before making investment decisions.*
+          EOF
+
+      - name: Display Markdown Report Preview
+        run: |
+          REPORT_FILE="${{ steps.analyze.outputs.report_file }}"
+          
+          if [ -f "$REPORT_FILE" ]; then
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "---" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "## 📄 Report Preview (First 100 lines)" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo '```markdown' >> $GITHUB_STEP_SUMMARY
+            head -100 "$REPORT_FILE" >> $GITHUB_STEP_SUMMARY
+            echo '' >> $GITHUB_STEP_SUMMARY
+            echo '... (truncated - download artifact for full report)' >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+          fi
+
+  # Batch analysis job for multiple stocks
+  batch-analyze:
+    name: 📊 Batch Analysis (KLCI Top Picks)
+    runs-on: ubuntu-latest
+    if: false  # Disabled by default - enable via separate workflow or input
+    
+    strategy:
+      matrix:
+        ticker:
+          - "1155.KL"   # Maybank
+          - "1295.KL"   # Public Bank
+          - "5347.KL"   # Tenaga
+          - "5225.KL"   # IHH
+          - "5183.KL"   # Petronas Chemicals
+      fail-fast: false
+      max-parallel: 2
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+
+      - name: Install
+        run: |
+          pip install -r requirements.txt
+          pip install -e .
+
+      - name: Analyze ${{ matrix.ticker }}
+        run: |
+          mkdir -p results
+          python -m bursa_screener --analyze ${{ matrix.ticker }} --output results
+
+      - name: Upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: analysis-${{ matrix.ticker }}
+          path: results/
+          retention-days: 30
