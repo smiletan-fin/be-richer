@@ -320,6 +320,13 @@ def _generate_llm_prompt(r: StockResult, report_date: str, news_data: dict | Non
         inst_score = r.fund.score_institutional_flow
         insider_score = r.fund.score_insider_trading
         
+        # Format KLSE values with None handling
+        klse_pe_str = f"{r.fund.klse_pe:.2f}x" if r.fund.klse_pe is not None else "N/A"
+        klse_roe_str = f"{r.fund.klse_roe:.2f}%" if r.fund.klse_roe is not None else "N/A"
+        klse_pb_str = f"{r.fund.klse_pb:.2f}x" if r.fund.klse_pb is not None else "N/A"
+        klse_div_yield_str = f"{r.fund.klse_div_yield:.2f}%" if r.fund.klse_div_yield is not None else "N/A"
+        klse_sector_str = r.fund.klse_sector if r.fund.klse_sector is not None else "N/A"
+        
         klse_section = f"""
 ## KLSE SCREENER DATA (Malaysian Market Source)
 
@@ -328,11 +335,11 @@ def _generate_llm_prompt(r: StockResult, report_date: str, news_data: dict | Non
 **Enhanced Fundamentals (from KLSE Screener):**
 | Metric | Value |
 |--------|-------|
-| PE Ratio | {r.fund.klse_pe:.2f}x | 
-| ROE | {r.fund.klse_roe:.2f}% |
-| P/B Ratio | {r.fund.klse_pb:.2f}x |
-| Dividend Yield | {r.fund.klse_div_yield:.2f}% |
-| Sector | {r.fund.klse_sector} |
+| PE Ratio | {klse_pe_str} | 
+| ROE | {klse_roe_str} |
+| P/B Ratio | {klse_pb_str} |
+| Dividend Yield | {klse_div_yield_str} |
+| Sector | {klse_sector_str} |
 
 **Latest Quarter Performance:**
 | Metric | Value | Interpretation |
@@ -343,10 +350,10 @@ def _generate_llm_prompt(r: StockResult, report_date: str, news_data: dict | Non
 **KLSE Enhanced Scores:**
 | Factor | Score | Max | Interpretation |
 |--------|-------|-----|----------------|
-| Earnings Momentum | {mom_score} | 5 | {"Strong acceleration" if mom_score >= 4 else "Good momentum" if mom_score >= 3 else "Moderate" if mom_score >= 2 else "Weak"} |
-| Earnings Consistency | {cons_score} | 3 | {f"{cons_score}+ consecutive growth quarters" if cons_score > 0 else "Inconsistent"} |
-| Institutional Flow | {inst_score} | 3 | {"Net institutional buying" if inst_score >= 2 else "Mixed activity" if inst_score == 1 else "Net selling or neutral"} |
-| Insider Trading | {insider_score} | 3 | {"Directors buying" if insider_score >= 2 else "Mixed" if insider_score >= 0 else "Directors selling (warning)"} |
+| Earnings Momentum | {mom_score if mom_score is not None else "N/A"} | 5 | {"Strong acceleration" if mom_score is not None and mom_score >= 4 else "Good momentum" if mom_score is not None and mom_score >= 3 else "Moderate" if mom_score is not None and mom_score >= 2 else "Weak" if mom_score is not None else "N/A"} |
+| Earnings Consistency | {cons_score if cons_score is not None else "N/A"} | 3 | {f"{cons_score}+ consecutive growth quarters" if cons_score is not None and cons_score > 0 else "Inconsistent" if cons_score is not None else "N/A"} |
+| Institutional Flow | {inst_score if inst_score is not None else "N/A"} | 3 | {"Net institutional buying" if inst_score is not None and inst_score >= 2 else "Mixed activity" if inst_score is not None and inst_score == 1 else "Net selling or neutral" if inst_score is not None else "N/A"} |
+| Insider Trading | {insider_score if insider_score is not None else "N/A"} | 3 | {"Directors buying" if insider_score is not None and insider_score >= 2 else "Mixed" if insider_score is not None and insider_score >= 0 else "Directors selling (warning)" if insider_score is not None else "N/A"} |
 """
         
         # Detailed quarterly history
